@@ -32,6 +32,7 @@ import com.medit.daw.model.Note
 import com.medit.daw.model.Project
 import com.medit.daw.model.TimeSignature
 import com.medit.daw.model.TimeSignaturePoint
+import com.medit.daw.model.Track
 import com.medit.daw.model.noteName
 import com.medit.daw.model.snapTick
 import kotlinx.coroutines.Dispatchers
@@ -935,6 +936,36 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         playback.setProject(updated)
         _trackPickerVisible.value = false
         postMessage("${p.tracks[index].name} を編集します")
+    }
+
+    /** Adds a new empty track and makes it active. */
+    fun addTrack() {
+        val p = _project.value ?: return
+        val newTrack = Track(
+            name = "Track ${p.tracks.size + 1}",
+            channel = p.tracks.size % 16,
+            notes = emptyList(),
+            rawEvents = emptyList(),
+            isDrum = false,
+            soundFontPath = "",
+            presetIndex = 0,
+        )
+        val updated = p.copy(tracks = p.tracks + newTrack, activeTrack = p.tracks.size)
+        _project.value = updated
+        playback.setProject(updated)
+        postMessage("トラック「${newTrack.name}」を追加しました")
+    }
+
+    /** Removes the given track (must be more than 1 track). */
+    fun removeTrack(index: Int) {
+        val p = _project.value ?: return
+        if (p.tracks.size <= 1 || index !in p.tracks.indices) return
+        val newTracks = p.tracks.filterIndexed { i, _ -> i != index }
+        val newActive = p.activeTrack.coerceIn(0, newTracks.size - 1)
+        val updated = p.copy(tracks = newTracks, activeTrack = newActive)
+        _project.value = updated
+        playback.setProject(updated)
+        postMessage("${p.tracks[index].name} を削除しました")
     }
 
     /** Presets of the given track, empty when no SoundFont is loaded. */

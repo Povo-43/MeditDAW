@@ -568,101 +568,163 @@ private fun EditorScreen(
                 onMeta = { showMeta = true },
                 onMidiInput = { vm.refreshMidiDevices(); showMidiInput = true },
             )
-            // Track list (MeditDAW multi-track)
-            Column(
+            // Track tab bar (classic-style chips)
+            LazyRow(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                    .padding(horizontal = 10.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    text = "トラック",
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.padding(start = 8.dp, bottom = 4.dp),
-                )
-                LazyColumn(
-                    modifier = Modifier.fillMaxWidth(),
-                    contentPadding = PaddingValues(4.dp),
-                ) {
-                    itemsIndexed(project.tracks) { index, track ->
-                        val isActive = index == vm.activeTrackIndex()
-                        val status = ui.audio[index]
-                        val statusText = when (status) {
-                            is TrackAudioStatus.Ready -> "OK"
-                            is TrackAudioStatus.Failed -> "エラー: ${status.message}"
-                            is TrackAudioStatus.Loading -> "読込中…"
-                            TrackAudioStatus.Loading -> "読込中…"
-                            else -> "—"
-                        }
-                        val sf2Label = track.soundFontPath.takeIf { it.isNotBlank() }
-                            ?.let { it.substringAfterLast('/') } ?: "内蔵SF2"
-
+                itemsIndexed(project.tracks) { index, track ->
+                    val isActive = index == vm.activeTrackIndex()
+                    Surface(
+                        onClick = { vm.selectTrack(index) },
+                        shape = RoundedCornerShape(11.dp),
+                        color = if (isActive) MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)
+                        else MaterialTheme.colorScheme.surfaceContainerHighest,
+                        contentColor = if (isActive) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurface,
+                        border = BorderStroke(
+                            1.dp,
+                            if (isActive) MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
+                            else MaterialTheme.colorScheme.outline,
+                        ),
+                        modifier = Modifier.heightIn(min = 38.dp),
+                    ) {
                         Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 4.dp, vertical = 2.dp)
-                                .background(
-                                    if (isActive) Color(0xFF2A3442) else Color.Transparent,
-                                    shape = RoundedCornerShape(4.dp),
-                                ),
+                            Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Text(
-                                text = "${index + 1}. ${track.name}",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = if (isActive) Color(0xFFF2B65A) else Color(0xFFE7EDF4),
-                                modifier = Modifier.weight(1f),
+                            Icon(
+                                Icons.Rounded.Audiotrack,
+                                contentDescription = null,
+                                tint = if (isActive) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.size(15.dp),
                             )
+                            Spacer(Modifier.width(5.dp))
                             Text(
-                                text = "SF2: $sf2Label (P${track.presetIndex})  $statusText",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = Color(0xFF93A1B1),
+                                track.name,
+                                style = MaterialTheme.typography.labelMedium,
+                                color = if (isActive) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
                             )
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Button(
-                                    onClick = { vm.selectTrack(index) },
-                                    enabled = !isActive,
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF11443F)),
-                                ) {
-                                    Text(text = "選択", style = MaterialTheme.typography.labelSmall)
-                                }
-                                Button(
-                                    onClick = {
-                                        pickTargetTrack = index
-                                        getContentLauncher.launch("audio/*")
-                                    },
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF05233D)),
-                                ) {
-                                    Text(text = "SF2…", style = MaterialTheme.typography.labelSmall)
-                                }
-                                Button(
-                                    onClick = {
-                                        vm.selectTrack(index)
-                                        vm.reloadBundledSoundFont()
-                                        pickTargetTrack = -1
-                                    },
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF201708)),
-                                ) {
-                                    Text(text = "内蔵", style = MaterialTheme.typography.labelSmall)
-                                }
-                                Button(
-                                    onClick = { presetMenuOpen = if (presetMenuOpen == index) -1 else index },
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF05233D)),
-                                ) {
-                                    Text(text = "プリセット ${track.presetIndex + 1}", style = MaterialTheme.typography.labelSmall)
-                                }
-                            }
+                        }
+                    }
+                }
+                item {
+                    Surface(
+                        onClick = { vm.addTrack() },
+                        shape = RoundedCornerShape(11.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                        contentColor = MaterialTheme.colorScheme.onSurface,
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                        modifier = Modifier.heightIn(min = 38.dp),
+                    ) {
+                        Row(
+                            Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(
+                                Icons.Rounded.Add,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.size(15.dp),
+                            )
+                            Spacer(Modifier.width(5.dp))
+                            Text(
+                                "追加",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                            )
+                        }
+                    }
+                }
+            }
+            // Selected track sound source bar (classic-style info line)
+            val activeIdx = vm.activeTrackIndex()
+            val activeTrack = project.tracks.getOrNull(activeIdx)
+            if (activeTrack != null) {
+                val sf2Label = activeTrack.soundFontPath.takeIf { it.isNotBlank() }
+                    ?.let { it.substringAfterLast('/') } ?: "内蔵SF2"
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        Icons.Rounded.LibraryMusic,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(14.dp),
+                    )
+                    Spacer(Modifier.width(5.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            "音源: $sf2Label",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                        )
+                        val presetCount = vm.trackPresets(activeIdx).size
+                        Text(
+                            "プリセット: ${activeTrack.presetIndex + 1} / $presetCount",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                            maxLines = 1,
+                        )
+                    }
+                    // Track settings menu
+                    Box {
+                        IconButton(onClick = { presetMenuOpen = if (presetMenuOpen == activeIdx) -1 else activeIdx }) {
+                            Icon(
+                                Icons.Rounded.MoreVert,
+                                contentDescription = "トラック設定",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(18.dp),
+                            )
                         }
                         DropdownMenu(
-                            expanded = presetMenuOpen == index,
+                            expanded = presetMenuOpen == activeIdx,
                             onDismissRequest = { presetMenuOpen = -1 },
                         ) {
-                            vm.trackPresets(index).forEachIndexed { i, p ->
+                            DropdownMenuItem(
+                                text = { Text("SF2を読み込む…") },
+                                onClick = {
+                                    pickTargetTrack = activeIdx
+                                    getContentLauncher.launch("audio/*")
+                                    presetMenuOpen = -1
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("内蔵ピアノ音源に戻す") },
+                                onClick = {
+                                    vm.reloadBundledSoundFont()
+                                    presetMenuOpen = -1
+                                },
+                            )
+                            HorizontalDivider()
+                            vm.trackPresets(activeIdx).forEachIndexed { i, p ->
                                 DropdownMenuItem(
+                                    text = { Text("プリセット ${i + 1}. ${p.name}") },
                                     onClick = {
-                                        vm.setTrackPreset(index, i)
+                                        vm.setTrackPreset(activeIdx, i)
                                         presetMenuOpen = -1
                                     },
-                                    text = { Text(text = "${i + 1}. ${p.name}") },
+                                )
+                            }
+                            HorizontalDivider()
+                            if (project.tracks.size > 1) {
+                                DropdownMenuItem(
+                                    text = { Text("このトラックを削除") },
+                                    onClick = {
+                                        vm.removeTrack(activeIdx)
+                                        presetMenuOpen = -1
+                                    },
                                 )
                             }
                         }
