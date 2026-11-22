@@ -14,6 +14,7 @@ import com.medit.daw.audio.AudioStatus
 import com.medit.daw.audio.MultiAudioEngine
 import com.medit.daw.audio.PlaybackEngine
 import com.medit.daw.audio.SoundFontLoader
+import com.medit.daw.audio.SoundFont
 import com.medit.daw.audio.SoundFontPreset
 import com.medit.daw.audio.TrackAudioStatus
 import com.medit.daw.data.AutosaveData
@@ -1052,6 +1053,14 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     /** Presets of the given track, empty when no SoundFont is loaded. */
     fun trackPresets(trackIndex: Int): List<SoundFontPreset> {
         return audio.soundFontFor(trackIndex)?.presets ?: emptyList()
+    }
+
+    /** All SoundFonts currently loaded app-wide (global library). */
+    fun loadedSoundFonts(): List<SoundFont> = audio.loadedFonts()
+
+    /** Loads a SoundFont file into the global library and assigns it to the given track. */
+    fun loadSoundFontToLibrary(uri: Uri, trackIndex: Int) {
+        loadExternalSoundFont(uri)
     }
 
     /** Switches the SoundFont preset (instrument) of the given track. */

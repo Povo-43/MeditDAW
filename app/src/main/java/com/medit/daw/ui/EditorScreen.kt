@@ -481,6 +481,7 @@ private fun EditorScreen(
     val rollView = remember { PianoRollView(context) }
     var pickTargetTrack by remember { mutableIntStateOf(-1) }
     var presetMenuOpen by remember { mutableIntStateOf(-1) }
+    var kebabMenuOpen by remember { mutableStateOf(false) }
     var showTrackPanel by remember { mutableStateOf(true) }
     val getContentLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent(),
@@ -674,12 +675,38 @@ private fun EditorScreen(
             if (activeTrack != null) {
                 val sf2Label = activeTrack.soundFontPath.takeIf { it.isNotBlank() }
                     ?.let { it.substringAfterLast('/') } ?: "内蔵SF2"
+                val presets = vm.trackPresets(activeIdx)
+                val activePresetName = presets.getOrNull(activeTrack.presetIndex)?.name ?: "—"
                 Row(
                     Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 14.dp, vertical = 4.dp),
+                        .padding(horizontal = 10.dp, vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
+                    // M / S toggles — always accessible on the selected track bar
+                    TextButton(
+                        onClick = { vm.toggleTrackMute(activeIdx) },
+                        colors = ButtonDefaults.textButtonColors(
+                            contentColor = if (activeTrack.isMuted) MaterialTheme.colorScheme.error
+                            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                        ),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                        modifier = Modifier.heightIn(min = 34.dp),
+                    ) {
+                        Text("M", style = MaterialTheme.typography.labelMedium)
+                    }
+                    TextButton(
+                        onClick = { vm.toggleTrackSolo(activeIdx) },
+                        colors = ButtonDefaults.textButtonColors(
+                            contentColor = if (activeTrack.isSolo) MaterialTheme.colorScheme.tertiary
+                            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                        ),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                        modifier = Modifier.heightIn(min = 34.dp),
+                    ) {
+                        Text("S", style = MaterialTheme.typography.labelMedium)
+                    }
+                    Spacer(Modifier.width(6.dp))
                     Icon(
                         Icons.Rounded.LibraryMusic,
                         contentDescription = null,
@@ -694,17 +721,50 @@ private fun EditorScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,
                         )
-                        val presetCount = vm.trackPresets(activeIdx).size
-                        Text(
-                            "プリセット: ${activeTrack.presetIndex + 1} / $presetCount",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                            maxLines = 1,
-                        )
+                        // Preset selector — tap to open the preset list of this SF2
+                        Box {
+                            TextButton(
+                                onClick = { presetMenuOpen = activeIdx },
+                                contentPadding = PaddingValues(horizontal = 0.dp, vertical = 0.dp),
+                                modifier = Modifier.heightIn(min = 24.dp),
+                            ) {
+                                Text(
+                                    "プリセット: $activePresetName (${activeTrack.presetIndex + 1}/${presets.size})",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    maxLines = 1,
+                                )
+                            }
+                            DropdownMenu(
+                                expanded = presetMenuOpen == activeIdx,
+                                onDismissRequest = { presetMenuOpen = -1 },
+                            ) {
+                                if (presets.isEmpty()) {
+                                    DropdownMenuItem(
+                                        text = { Text("プリセットがありません") },
+                                        onClick = { presetMenuOpen = -1 },
+                                    )
+                                }
+                                presets.forEachIndexed { i, p ->
+                                    DropdownMenuItem(
+                                        text = { Text("${i + 1}. ${p.name}") },
+                                        leadingIcon = {
+                                            if (i == activeTrack.presetIndex) {
+                                                Icon(Icons.Rounded.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(14.dp))
+                                            }
+                                        },
+                                        onClick = {
+                                            vm.setTrackPreset(activeIdx, i)
+                                            presetMenuOpen = -1
+                                        },
+                                    )
+                                }
+                            }
+                        }
                     }
-                    // Track settings menu
+                    // Kebab menu — SF2 import / bundled revert / track removal
                     Box {
-                        IconButton(onClick = { presetMenuOpen = if (presetMenuOpen == activeIdx) -1 else activeIdx }) {
+                        IconButton(onClick = { kebabMenuOpen = !kebabMenuOpen }) {
                             Icon(
                                 Icons.Rounded.MoreVert,
                                 contentDescription = "トラック設定",
@@ -713,8 +773,8 @@ private fun EditorScreen(
                             )
                         }
                         DropdownMenu(
-                            expanded = presetMenuOpen == activeIdx,
-                            onDismissRequest = { presetMenuOpen = -1 },
+                            expanded = kebabMenuOpen,
+                            onDismissRequest = { kebabMenuOpen = false },
                         ) {
                             DropdownMenuItem(
                                 text = { Text("SF2を読み込む…") },
@@ -731,16 +791,6 @@ private fun EditorScreen(
                                     presetMenuOpen = -1
                                 },
                             )
-                            HorizontalDivider()
-                            vm.trackPresets(activeIdx).forEachIndexed { i, p ->
-                                DropdownMenuItem(
-                                    text = { Text("プリセット ${i + 1}. ${p.name}") },
-                                    onClick = {
-                                        vm.setTrackPreset(activeIdx, i)
-                                        presetMenuOpen = -1
-                                    },
-                                )
-                            }
                             HorizontalDivider()
                             if (project.tracks.size > 1) {
                                 DropdownMenuItem(
@@ -2315,11 +2365,19 @@ private fun TrackPanel(
                                     Text("S", style = MaterialTheme.typography.labelSmall)
                                 }
                                 Spacer(Modifier.width(6.dp))
-                                Text(
-                                    "プリセット ${track.presetIndex + 1}",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
+                                Box {
+                                    TextButton(
+                                        onClick = { onPresetMenuToggle(index) },
+                                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
+                                        modifier = Modifier.heightIn(min = 24.dp),
+                                    ) {
+                                        Text(
+                                            "プリセット ${track.presetIndex + 1}",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.primary,
+                                        )
+                                    }
+                                }
                             }
                         }
                     }

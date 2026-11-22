@@ -90,6 +90,9 @@ class MultiAudioEngine(private val context: Context) {
     /** The SoundFont loaded for [trackIndex], if any. */
     fun soundFontFor(trackIndex: Int): SoundFont? = fonts[trackIndex]
 
+    /** All SoundFonts currently loaded in this engine (global library). */
+    fun loadedFonts(): List<SoundFont> = fonts.values.toList()
+
     /** Switches the active preset of the synth for [trackIndex]. */
     fun selectPreset(trackIndex: Int, presetIndex: Int) {
         synths[trackIndex]?.selectPreset(presetIndex)
