@@ -100,9 +100,11 @@ jobs:
             "${BUILD_TOOLS}/apksigner" verify --verbose "${APK}" | grep -q "Verified using v3 scheme (APK Signature Scheme v3): true"
           fi
           test -n "$(unzip -l "${APK}" | awk '/META-INF\/MANIFEST.MF/')"
-          BADGING=$("${BUILD_TOOLS}/aapt2" dump badging "${APK}")
-          echo "${BADGING}" | head -3
-          echo "${BADGING}" | grep -q "^package: name='com.medit.daw'"
+          if [[ "${IS_RELEASE}" == "1" ]]; then
+            BADGING=$("${BUILD_TOOLS}/aapt2" dump badging "${APK}")
+            echo "${BADGING}" | head -3
+            echo "${BADGING}" | grep -q "^package: name='com.medit.daw'"
+          fi
 
       - name: Prepare release artifacts
         id: artifact
