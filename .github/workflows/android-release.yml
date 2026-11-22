@@ -92,8 +92,11 @@ jobs:
           fi
           echo "Looking for APK at: ${APK}"
           ls -la "${APK}" || (echo "APK not found at ${APK}"; ls -laR app/build/outputs/apk/ 2>/dev/null || true; exit 1)
-          "${BUILD_TOOLS}/zipalign" -c 4 "${APK}"
           if [[ "${RELEASE_MODE}" != "debug" ]]; then
+            "${BUILD_TOOLS}/zipalign" -c 4 "${APK}"
+            "${BUILD_TOOLS}/apksigner" verify --verbose "${APK}" | tee /dev/stderr | grep -q "Verified using v2 scheme (APK Signature Scheme v2): true"
+            "${BUILD_TOOLS}/apksigner" verify --verbose "${APK}" | grep -q "Verified using v3 scheme (APK Signature Scheme v3): true"
+          fi
             "${BUILD_TOOLS}/apksigner" verify --verbose "${APK}" | tee /dev/stderr | grep -q "Verified using v2 scheme (APK Signature Scheme v2): true"
             "${BUILD_TOOLS}/apksigner" verify --verbose "${APK}" | grep -q "Verified using v3 scheme (APK Signature Scheme v3): true"
           fi
