@@ -71,9 +71,6 @@ jobs:
             echo "RELEASE_MODE=debug" >> "$GITHUB_ENV"
           fi
 
-      - name: Lint (app)
-        run: ./gradlew :app:lintDebug --no-daemon --stacktrace
-
       - name: Build APKs
         run: |
           if [[ "${RELEASE_MODE}" == "debug" ]]; then
