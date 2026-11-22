@@ -1,4 +1,4 @@
-package com.medit.midi.ui
+package com.medit.daw.ui
 
 import android.content.Intent
 import android.net.Uri
@@ -122,22 +122,22 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.medit.midi.audio.AudioExportFormat
-import com.medit.midi.audio.AudioStatus
-import com.medit.midi.audio.TrackAudioStatus
-import com.medit.midi.editor.AutosaveState
-import com.medit.midi.editor.BootState
-import com.medit.midi.editor.EditorUiState
-import com.medit.midi.editor.EditorViewModel
-import com.medit.midi.editor.HoverInfo
-import com.medit.midi.editor.MidiUiState
-import com.medit.midi.editor.RollHost
-import com.medit.midi.editor.TabInfo
-import com.medit.midi.editor.UiCommand
-import com.medit.midi.editor.ViewCommand
-import com.medit.midi.model.GridUnit
-import com.medit.midi.model.MeterMap
-import com.medit.midi.model.Project
+import com.medit.daw.audio.AudioExportFormat
+import com.medit.daw.audio.AudioStatus
+import com.medit.daw.audio.TrackAudioStatus
+import com.medit.daw.editor.AutosaveState
+import com.medit.daw.editor.BootState
+import com.medit.daw.editor.EditorUiState
+import com.medit.daw.editor.EditorViewModel
+import com.medit.daw.editor.HoverInfo
+import com.medit.daw.editor.MidiUiState
+import com.medit.daw.editor.RollHost
+import com.medit.daw.editor.TabInfo
+import com.medit.daw.editor.UiCommand
+import com.medit.daw.editor.ViewCommand
+import com.medit.daw.model.GridUnit
+import com.medit.daw.model.MeterMap
+import com.medit.daw.model.Project
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -485,7 +485,7 @@ private fun EditorScreen(
             override fun addNoteAt(pitch: Int, startTick: Int, durationTicks: Int) =
                 vm.addNoteAt(pitch, startTick, durationTicks)
 
-            override fun commitRollNotes(newNotes: List<com.medit.midi.model.Note>) =
+            override fun commitRollNotes(newNotes: List<com.medit.daw.model.Note>) =
                 vm.commitRollNotes(newNotes)
 
             override fun setRollSelection(ids: Set<Long>) = vm.setRollSelection(ids)
@@ -496,7 +496,7 @@ private fun EditorScreen(
             override fun setLoopRange(startTick: Int, endTick: Int) =
                 vm.setLoopRange(startTick, endTick)
 
-            override fun onViewportSettled(viewport: com.medit.midi.data.ViewportState) =
+            override fun onViewportSettled(viewport: com.medit.daw.data.ViewportState) =
                 vm.onViewportSettled(viewport)
 
             override fun onHoverInfo(info: HoverInfo?) = vm.onHoverInfo(info)

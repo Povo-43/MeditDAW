@@ -1,9 +1,9 @@
-package com.medit.midi.editor
+package com.medit.daw.editor
 
-import com.medit.midi.data.EditorPrefs
-import com.medit.midi.data.ViewportState
-import com.medit.midi.model.Note
-import com.medit.midi.model.Project
+import com.medit.daw.data.EditorPrefs
+import com.medit.daw.data.ViewportState
+import com.medit.daw.model.Note
+import com.medit.daw.model.Project
 
 /**
  * Everything the custom piano roll needs from the editor. Keeping this narrow

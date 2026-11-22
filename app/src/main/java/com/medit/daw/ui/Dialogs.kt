@@ -1,4 +1,4 @@
-package com.medit.midi.ui
+package com.medit.daw.ui
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -90,15 +90,15 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.medit.daw.BuildConfig
-import com.medit.midi.audio.AudioStatus
-import com.medit.midi.editor.EditorUiState
-import com.medit.midi.editor.EditorViewModel
-import com.medit.midi.model.GridUnit
-import com.medit.midi.model.MeterMap
-import com.medit.midi.model.Note
-import com.medit.midi.model.Project
-import com.medit.midi.model.TimeSignature
-import com.medit.midi.model.noteName
+import com.medit.daw.audio.AudioStatus
+import com.medit.daw.editor.EditorUiState
+import com.medit.daw.editor.EditorViewModel
+import com.medit.daw.model.GridUnit
+import com.medit.daw.model.MeterMap
+import com.medit.daw.model.Note
+import com.medit.daw.model.Project
+import com.medit.daw.model.TimeSignature
+import com.medit.daw.model.noteName
 import kotlin.math.abs
 import kotlin.math.roundToInt
 

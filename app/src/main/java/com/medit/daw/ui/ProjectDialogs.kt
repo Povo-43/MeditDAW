@@ -1,4 +1,4 @@
-package com.medit.midi.ui
+package com.medit.daw.ui
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -54,10 +54,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.medit.midi.data.ProjectSummary
-import com.medit.midi.editor.MidiUiState
-import com.medit.midi.midi.MidiDeviceOption
-import com.medit.midi.model.MidiMeta
+import com.medit.daw.data.ProjectSummary
+import com.medit.daw.editor.MidiUiState
+import com.medit.daw.midi.MidiDeviceOption
+import com.medit.daw.model.MidiMeta
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale

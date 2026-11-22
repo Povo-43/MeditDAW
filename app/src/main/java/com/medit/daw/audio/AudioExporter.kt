@@ -1,10 +1,10 @@
-package com.medit.midi.audio
+package com.medit.daw.audio
 
 import android.media.MediaCodec
 import android.media.MediaCodecInfo
 import android.media.MediaFormat
 import android.media.MediaMuxer
-import com.medit.midi.model.Project
+import com.medit.daw.model.Project
 import de.sciss.jump3r.mp3.BitStream
 import de.sciss.jump3r.mp3.GainAnalysis
 import de.sciss.jump3r.mp3.ID3Tag

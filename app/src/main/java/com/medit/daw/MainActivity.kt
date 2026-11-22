@@ -1,4 +1,4 @@
-package com.medit.midi
+package com.medit.daw
 
 import android.content.Intent
 import android.graphics.Color
@@ -10,8 +10,8 @@ import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
-import com.medit.midi.editor.EditorViewModel
-import com.medit.midi.ui.MeditApp
+import com.medit.daw.editor.EditorViewModel
+import com.medit.daw.ui.MeditApp
 
 /**
  * Single-activity host. The editor itself is Compose, with the piano roll as a

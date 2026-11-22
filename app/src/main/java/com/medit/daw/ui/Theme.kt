@@ -1,4 +1,4 @@
-package com.medit.midi.ui
+package com.medit.daw.ui
 
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography

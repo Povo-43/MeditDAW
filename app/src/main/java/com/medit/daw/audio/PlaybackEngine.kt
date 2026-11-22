@@ -1,8 +1,8 @@
-package com.medit.midi.audio
+package com.medit.daw.audio
 
 import android.os.Process
-import com.medit.midi.model.Project
-import com.medit.midi.model.TempoMap
+import com.medit.daw.model.Project
+import com.medit.daw.model.TempoMap
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow

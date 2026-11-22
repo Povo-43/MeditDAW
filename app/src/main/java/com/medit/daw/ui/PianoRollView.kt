@@ -1,4 +1,4 @@
-package com.medit.midi.ui
+package com.medit.daw.ui
 
 import android.annotation.SuppressLint
 import android.content.Context
@@ -18,18 +18,18 @@ import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
-import com.medit.midi.data.EditorPrefs
-import com.medit.midi.data.ViewportState
-import com.medit.midi.editor.HoverInfo
-import com.medit.midi.editor.HoverZone
-import com.medit.midi.editor.RollHost
-import com.medit.midi.model.GridUnit
-import com.medit.midi.model.MeterMap
-import com.medit.midi.model.Note
-import com.medit.midi.model.Project
-import com.medit.midi.model.isBlackKey
-import com.medit.midi.model.noteName
-import com.medit.midi.model.snapTick
+import com.medit.daw.data.EditorPrefs
+import com.medit.daw.data.ViewportState
+import com.medit.daw.editor.HoverInfo
+import com.medit.daw.editor.HoverZone
+import com.medit.daw.editor.RollHost
+import com.medit.daw.model.GridUnit
+import com.medit.daw.model.MeterMap
+import com.medit.daw.model.Note
+import com.medit.daw.model.Project
+import com.medit.daw.model.isBlackKey
+import com.medit.daw.model.noteName
+import com.medit.daw.model.snapTick
 import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.floor

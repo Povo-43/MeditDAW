@@ -1,4 +1,4 @@
-package com.medit.midi.midi
+package com.medit.daw.midi
 
 import android.content.Context
 import android.media.midi.MidiDevice

@@ -1,12 +1,12 @@
-package com.medit.midi.midi
+package com.medit.daw.midi
 
-import com.medit.midi.model.MidiMeta
-import com.medit.midi.model.Note
-import com.medit.midi.model.Project
-import com.medit.midi.model.RawEvent
-import com.medit.midi.model.TimeSignature
-import com.medit.midi.model.TimeSignaturePoint
-import com.medit.midi.model.Track
+import com.medit.daw.model.MidiMeta
+import com.medit.daw.model.Note
+import com.medit.daw.model.Project
+import com.medit.daw.model.RawEvent
+import com.medit.daw.model.TimeSignature
+import com.medit.daw.model.TimeSignaturePoint
+import com.medit.daw.model.Track
 import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 import java.nio.charset.CharacterCodingException

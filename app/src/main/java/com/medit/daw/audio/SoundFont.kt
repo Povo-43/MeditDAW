@@ -1,4 +1,4 @@
-package com.medit.midi.audio
+package com.medit.daw.audio
 
 /**
  * One playable preset (instrument) inside a SoundFont 2.04 bank.

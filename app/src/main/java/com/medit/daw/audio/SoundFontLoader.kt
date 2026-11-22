@@ -1,4 +1,4 @@
-package com.medit.midi.audio
+package com.medit.daw.audio
 
 import java.io.ByteArrayInputStream
 import java.io.File

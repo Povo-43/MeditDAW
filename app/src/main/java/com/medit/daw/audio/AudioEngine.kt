@@ -1,4 +1,4 @@
-package com.medit.midi.audio
+package com.medit.daw.audio
 
 import android.content.Context
 import kotlinx.coroutines.CoroutineScope

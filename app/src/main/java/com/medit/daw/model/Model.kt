@@ -1,4 +1,4 @@
-package com.medit.midi.model
+package com.medit.daw.model
 
 import kotlin.math.roundToInt
 
