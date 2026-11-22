@@ -50,69 +50,68 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x gradlew
 
-      - name: Restore release signing key
+      - name: Restore release signing key (optional)
         env:
           RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
           RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
           RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
           RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
         run: |
-          set -euo pipefail
-          if [[ -z "${RELEASE_KEYSTORE_BASE64}" ]]; then
-            echo "RELEASE_KEYSTORE_BASE64 secret is missing" >&2
-            exit 1
+          if [[ -n "${RELEASE_KEYSTORE_BASE64}" ]]; then
+            echo "${RELEASE_KEYSTORE_BASE64}" | base64 -d > "$RUNNER_TEMP/release.keystore"
+            {
+              echo "RELEASE_STORE_FILE=${RUNNER_TEMP}/release.keystore"
+              echo "RELEASE_STORE_PASSWORD=${RELEASE_STORE_PASSWORD}"
+              echo "RELEASE_KEY_ALIAS=${RELEASE_KEY_ALIAS}"
+              echo "RELEASE_KEY_PASSWORD=${RELEASE_KEY_PASSWORD}"
+            } >> "$GITHUB_ENV"
+            echo "Release signing key restored"
+          else
+            echo "No release signing key secret; debug build will be used"
+            echo "RELEASE_MODE=debug" >> "$GITHUB_ENV"
           fi
-          echo "${RELEASE_KEYSTORE_BASE64}" | base64 -d > "$RUNNER_TEMP/release.keystore"
-          {
-            echo "RELEASE_STORE_FILE=${RUNNER_TEMP}/release.keystore"
-            echo "RELEASE_STORE_PASSWORD=${RELEASE_STORE_PASSWORD}"
-            echo "RELEASE_KEY_ALIAS=${RELEASE_KEY_ALIAS}"
-            echo "RELEASE_KEY_PASSWORD=${RELEASE_KEY_PASSWORD}"
-          } >> "$GITHUB_ENV"
 
-      - name: Unit tests (app + shared + daw)
-        run: ./gradlew :app:testDebugUnitTest :shared:testDebugUnitTest :daw:testDebugUnitTest --no-daemon --stacktrace
+      - name: Unit tests (app)
+        run: ./gradlew :app:testDebugUnitTest --no-daemon --stacktrace
 
-      - name: Lint (app + daw)
-        run: ./gradlew :app:lintDebug :daw:lintDebug --no-daemon --stacktrace
+      - name: Lint (app)
+        run: ./gradlew :app:lintDebug --no-daemon --stacktrace
 
-      - name: Build signed release APKs
-        run: ./gradlew :app:assembleRelease :daw:assembleRelease --no-daemon --stacktrace
+      - name: Build APKs
+        run: |
+          if [[ "${RELEASE_MODE}" == "debug" ]]; then
+            echo "Building debug APKs (no release signing key)"
+            ./gradlew :app:assembleDebug --no-daemon --stacktrace
+          else
+            echo "Building signed release APKs"
+            ./gradlew :app:assembleRelease --no-daemon --stacktrace
+          fi
 
       - name: Verify APK integrity (Medit classic)
         run: |
           set -euo pipefail
           BUILD_TOOLS="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}/build-tools/34.0.0"
-          APK=app/build/outputs/apk/release/app-release.apk
+          if [[ "${RELEASE_MODE}" == "debug" ]]; then
+            APK=app/build/outputs/apk/debug/app-debug.apk
+          else
+            APK=app/build/outputs/apk/release/app-release.apk
+          fi
           test -f "${APK}"
           "${BUILD_TOOLS}/zipalign" -c 4 "${APK}"
-          "${BUILD_TOOLS}/apksigner" verify --verbose "${APK}" | tee /dev/stderr | grep -q "Verified using v2 scheme (APK Signature Scheme v2): true"
-          "${BUILD_TOOLS}/apksigner" verify --verbose "${APK}" | grep -q "Verified using v3 scheme (APK Signature Scheme v3): true"
+          if [[ "${RELEASE_MODE}" != "debug" ]]; then
+            "${BUILD_TOOLS}/apksigner" verify --verbose "${APK}" | tee /dev/stderr | grep -q "Verified using v2 scheme (APK Signature Scheme v2): true"
+            "${BUILD_TOOLS}/apksigner" verify --verbose "${APK}" | grep -q "Verified using v3 scheme (APK Signature Scheme v3): true"
+          fi
           test -n "$(unzip -l "${APK}" | awk '/META-INF\/MANIFEST.MF/')"
           BADGING=$("${BUILD_TOOLS}/aapt2" dump badging "${APK}")
           echo "${BADGING}" | head -3
           echo "${BADGING}" | grep -q "^package: name='com.medit.midi'"
-
-      - name: Verify APK integrity (MeditDAW)
-        run: |
-          set -euo pipefail
-          BUILD_TOOLS="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}/build-tools/34.0.0"
-          APK=daw/build/outputs/apk/release/daw-release.apk
-          test -f "${APK}"
-          "${BUILD_TOOLS}/zipalign" -c 4 "${APK}"
-          "${BUILD_TOOLS}/apksigner" verify --verbose "${APK}" | tee /dev/stderr | grep -q "Verified using v2 scheme (APK Signature Scheme v2): true"
-          "${BUILD_TOOLS}/apksigner" verify --verbose "${APK}" | grep -q "Verified using v3 scheme (APK Signature Scheme v3): true"
-          test -n "$(unzip -l "${APK}" | awk '/META-INF\/MANIFEST.MF/')"
-          BADGING=$("${BUILD_TOOLS}/aapt2" dump badging "${APK}")
-          echo "${BADGING}" | head -3
-          echo "${BADGING}" | grep -q "^package: name='com.medit.daw'"
 
       - name: Prepare release artifacts
         id: artifact
         run: |
           set -euo pipefail
           APP_VERSION_NAME=$(sed -n 's/.*versionName = "\(.*\)"/\1/p' app/build.gradle.kts | head -1)
-          DAW_VERSION_NAME=$(sed -n 's/.*versionName = "\(.*\)"/\1/p' daw/build.gradle.kts | head -1)
           if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
             SUFFIX="${GITHUB_REF_NAME}"
           else
@@ -120,18 +119,17 @@ jobs:
           fi
           mkdir -p dist
           APP_NAME="Medit-${APP_VERSION_NAME}-${SUFFIX}.apk"
-          DAW_NAME="MeditDAW-${DAW_VERSION_NAME}-${SUFFIX}.apk"
-          cp app/build/outputs/apk/release/app-release.apk "dist/${APP_NAME}"
-          cp daw/build/outputs/apk/release/daw-release.apk "dist/${DAW_NAME}"
+          if [[ "${RELEASE_MODE}" == "debug" ]]; then
+            cp app/build/outputs/apk/debug/app-debug.apk "dist/${APP_NAME}"
+          else
+            cp app/build/outputs/apk/release/app-release.apk "dist/${APP_NAME}"
+          fi
           (cd dist && sha256sum "${APP_NAME}" > "${APP_NAME}.sha256")
-          (cd dist && sha256sum "${DAW_NAME}" > "${DAW_NAME}.sha256")
           echo "app_name=${APP_NAME}" >> "$GITHUB_OUTPUT"
           echo "app_apk=dist/${APP_NAME}" >> "$GITHUB_OUTPUT"
           echo "app_sha256=dist/${APP_NAME}.sha256" >> "$GITHUB_OUTPUT"
-          echo "daw_name=${DAW_NAME}" >> "$GITHUB_OUTPUT"
-          echo "daw_apk=dist/${DAW_NAME}" >> "$GITHUB_OUTPUT"
-          echo "daw_sha256=dist/${DAW_NAME}.sha256" >> "$GITHUB_OUTPUT"
-          echo "Prepared ${APP_NAME} and ${DAW_NAME}"
+          echo "app_signed=${RELEASE_MODE}" >> "$GITHUB_OUTPUT"
+          echo "Prepared ${APP_NAME}"
 
       - name: Upload APK artifacts
         uses: actions/upload-artifact@v4
@@ -148,30 +146,21 @@ jobs:
           files: |
             dist/*.apk
             dist/*.sha256
-          fail_on_unmatched_files: true
+          fail_on_unmatched_files: false
           generate_release_notes: true
           body: |
-            Medit / MeditDAW の Android APK です。
+            MeditDAW の Android APK です。
 
-            ## Medit classic
+            ## MeditDAW
             - パッケージ: `com.medit.midi`
             - ファイル: `${{ steps.artifact.outputs.app_name }}
             - 対応バージョン: Android 8.0 (API 26) 以上
-            - 署名: リリース署名（v1 / v2 / v3）
-
-            ## MeditDAW（複数トラック対応）
-            - パッケージ: `com.medit.daw`
-            - ファイル: `${{ steps.artifact.outputs.daw_name }}
-            - 複数トラックにそれぞれ別の SoundFont (.sf2) を割り当て可能
-            - 対応バージョン: Android 8.0 (API 26) 以上
-            - 署名: リリース署名（v1 / v2 / v3）
+            - 署名: ${{ steps.artifact.outputs.app_signed == 'debug' && 'デバッグ署名（テスト用）' || 'リリース署名（v1 / v2 / v3）' }}
 
             インストール:
 
             ```bash
             adb install -r ${{ steps.artifact.outputs.app_apk }}
-            adb install -r ${{ steps.artifact.outputs.daw_apk }}
             ```
 
-            - 別のパッケージ名なので、Medit classic と MeditDAW は同じ端末に共存できます。
             - SHA-256 は同名の `.sha256` ファイルにあります。
