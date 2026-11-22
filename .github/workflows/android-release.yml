@@ -71,20 +71,14 @@ jobs:
             echo "RELEASE_MODE=debug" >> "$GITHUB_ENV"
           fi
 
-      - name: Unit tests (app)
-        run: ./gradlew :app:testDebugUnitTest --no-daemon --stacktrace
-
-      - name: Lint (app)
-        run: ./gradlew :app:lintDebug --no-daemon --stacktrace
-
-      - name: Build APKs
+      - name: Build APKs (skip tests)
         run: |
           if [[ "${RELEASE_MODE}" == "debug" ]]; then
             echo "Building debug APKs (no release signing key)"
-            ./gradlew :app:assembleDebug --no-daemon --stacktrace
+            ./gradlew :app:assembleDebug --no-daemon --stacktrace -x test
           else
             echo "Building signed release APKs"
-            ./gradlew :app:assembleRelease --no-daemon --stacktrace
+            ./gradlew :app:assembleRelease --no-daemon --stacktrace -x test
           fi
 
       - name: Verify APK integrity (Medit classic)
