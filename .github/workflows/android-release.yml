@@ -71,7 +71,13 @@ jobs:
             echo "RELEASE_MODE=debug" >> "$GITHUB_ENV"
           fi
 
-      - name: Build APKs (skip tests)
+      - name: Unit tests (app)
+        run: ./gradlew :app:testDebugUnitTest --no-daemon --stacktrace
+
+      - name: Lint (app)
+        run: ./gradlew :app:lintDebug --no-daemon --stacktrace
+
+      - name: Build APKs
         run: |
           if [[ "${RELEASE_MODE}" == "debug" ]]; then
             echo "Building debug APKs (no release signing key)"
@@ -85,18 +91,17 @@ jobs:
         run: |
           set -euo pipefail
           BUILD_TOOLS="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}/build-tools/34.0.0"
-          if [[ "${RELEASE_MODE}" == "debug" ]]; then
-            APK=app/build/outputs/apk/debug/app-debug.apk
-          else
+          if [[ -f app/build/outputs/apk/release/app-release.apk ]]; then
             APK=app/build/outputs/apk/release/app-release.apk
+            IS_RELEASE=1
+          else
+            APK=app/build/outputs/apk/debug/app-debug.apk
+            IS_RELEASE=0
           fi
           echo "Looking for APK at: ${APK}"
-          ls -la "${APK}" || (echo "APK not found at ${APK}"; ls -laR app/build/outputs/apk/ 2>/dev/null || true; exit 1)
-          if [[ "${RELEASE_MODE}" != *"debug"* ]]; then
+          ls -la "${APK}"
+          if [[ "${IS_RELEASE}" == "1" ]]; then
             "${BUILD_TOOLS}/zipalign" -c 4 "${APK}"
-            "${BUILD_TOOLS}/apksigner" verify --verbose "${APK}" | tee /dev/stderr | grep -q "Verified using v2 scheme (APK Signature Scheme v2): true"
-            "${BUILD_TOOLS}/apksigner" verify --verbose "${APK}" | grep -q "Verified using v3 scheme (APK Signature Scheme v3): true"
-          fi
             "${BUILD_TOOLS}/apksigner" verify --verbose "${APK}" | tee /dev/stderr | grep -q "Verified using v2 scheme (APK Signature Scheme v2): true"
             "${BUILD_TOOLS}/apksigner" verify --verbose "${APK}" | grep -q "Verified using v3 scheme (APK Signature Scheme v3): true"
           fi
@@ -117,25 +122,17 @@ jobs:
           fi
           mkdir -p dist
           APP_NAME="Medit-${APP_VERSION_NAME}-${SUFFIX}.apk"
-          if [[ "${RELEASE_MODE}" == "debug" ]]; then
-            cp app/build/outputs/apk/debug/app-debug.apk "dist/${APP_NAME}"
-          else
+          if [[ -f app/build/outputs/apk/release/app-release.apk ]]; then
             cp app/build/outputs/apk/release/app-release.apk "dist/${APP_NAME}"
+          else
+            cp app/build/outputs/apk/debug/app-debug.apk "dist/${APP_NAME}"
           fi
           (cd dist && sha256sum "${APP_NAME}" > "${APP_NAME}.sha256")
           echo "app_name=${APP_NAME}" >> "$GITHUB_OUTPUT"
           echo "app_apk=dist/${APP_NAME}" >> "$GITHUB_OUTPUT"
           echo "app_sha256=dist/${APP_NAME}.sha256" >> "$GITHUB_OUTPUT"
-          echo "app_signed=${RELEASE_MODE}" >> "$GITHUB_OUTPUT"
+          echo "app_is_release=${IS_RELEASE:-0}" >> "$GITHUB_OUTPUT"
           echo "Prepared ${APP_NAME}"
-
-      - name: Upload APK artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: medit-apks
-          path: dist/*
-          if-no-files-found: error
-          retention-days: 30
 
       - name: Publish GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
@@ -153,7 +150,7 @@ jobs:
             - パッケージ: `com.medit.midi`
             - ファイル: `${{ steps.artifact.outputs.app_name }}
             - 対応バージョン: Android 8.0 (API 26) 以上
-            - 署名: ${{ steps.artifact.outputs.app_signed == 'debug' && 'デバッグ署名（テスト用）' || 'リリース署名（v1 / v2 / v3）' }}
+            - 署名: ${{ steps.artifact.outputs.app_is_release == '1' && 'リリース署名（v1 / v2 / v3）' || 'デバッグ署名（テスト用）' }}
 
             インストール:
 
