@@ -89,7 +89,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import com.medit.midi.BuildConfig
+import com.medit.daw.BuildConfig
 import com.medit.midi.audio.AudioStatus
 import com.medit.midi.editor.EditorUiState
 import com.medit.midi.editor.EditorViewModel

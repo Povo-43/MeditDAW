@@ -12,11 +12,13 @@ import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.max
 
 /**
- * Tick-accurate-enough transport running on its own thread. The UI only reads
- * an atomic playhead position; no Compose state is updated at audio rate.
+ * Tick-accurate-enough transport running on its own thread. Plays ALL tracks of
+ * the project, dispatching each note to the synth of the track it belongs to so
+ * every track can sound with its own SoundFont. The UI only reads an atomic
+ * playhead position; no Compose state is updated at audio rate.
  */
 class PlaybackEngine(
-    private val audio: AudioEngine,
+    private val audio: MultiAudioEngine,
 ) {
     private enum class Kind { SUSTAIN, NOTE_OFF, NOTE_ON }
 
@@ -26,6 +28,7 @@ class PlaybackEngine(
         val pitch: Int = 0,
         val velocity: Int = 0,
         val channel: Int = 0,
+        val trackIndex: Int = 0,
     )
 
     private val _isPlaying = MutableStateFlow(false)
@@ -46,7 +49,6 @@ class PlaybackEngine(
     @Volatile private var loopEnd = 0
     @Volatile private var stopAtTick = 0
     @Volatile private var sustainAtStart = false
-    @Volatile private var activeTrackIndex = 0
 
     private var lastProject: Project? = null
 
@@ -54,14 +56,12 @@ class PlaybackEngine(
 
     fun setProject(project: Project) {
         lastProject = project
-        val track = project.track
         val map = project.tempoMap()
         tempoMap = map
         ppq = project.ppq
         loopEnabled = project.loopEnabled && project.loopEndTick > project.loopStartTick
         loopStart = project.loopStartTick.coerceAtLeast(0)
         loopEnd = project.loopEndTick.coerceAtLeast(loopStart + 1)
-        activeTrackIndex = project.activeTrack
         val end = maxOf(project.songEndTick(), project.ppq * 4)
         stopAtTick = end + project.ppq / 2
         val newEvents = buildEvents(project)
@@ -89,8 +89,8 @@ class PlaybackEngine(
         position.set(tick)
         eventIndex.set(lowerBound(events, tick.toInt()))
         sustainAtStart = sustainAt(tick.toInt(), lastProject)
-        audio.allNotesOff(fast = true)
-        audio.setSustain(sustainAtStart)
+        audio.allNotesOffAll(fast = true)
+        audio.setSustainAll(sustainAtStart)
         retriggerSoundingNotes(tick)
         playing = true
         _isPlaying.value = true
@@ -107,8 +107,8 @@ class PlaybackEngine(
         playing = false
         generation.incrementAndGet()
         _isPlaying.value = false
-        audio.setSustain(false)
-        audio.allNotesOff()
+        audio.setSustainAll(false)
+        audio.allNotesOffAll()
     }
 
     fun stop() {
@@ -117,8 +117,8 @@ class PlaybackEngine(
         position.set(0.0)
         eventIndex.set(0)
         if (!wasPlaying) {
-            audio.setSustain(false)
-            audio.allNotesOff()
+            audio.setSustainAll(false)
+            audio.allNotesOffAll()
         }
     }
 
@@ -133,8 +133,8 @@ class PlaybackEngine(
             playing = false
             generation.incrementAndGet()
             _isPlaying.value = false
-            audio.setSustain(false)
-            audio.allNotesOff()
+            audio.setSustainAll(false)
+            audio.allNotesOffAll()
         }
         position.set(target)
         eventIndex.set(lowerBound(events, target.toInt()))
@@ -150,8 +150,8 @@ class PlaybackEngine(
         playing = false
         generation.incrementAndGet()
         _isPlaying.value = false
-        audio.setSustain(false)
-        audio.allNotesOff(fast = true)
+        audio.setSustainAll(false)
+        audio.allNotesOffAll(fast = true)
     }
 
     private fun runPlayer(myGeneration: Int) {
@@ -173,8 +173,8 @@ class PlaybackEngine(
                     if (off) sustain = false
                 }
                 val carry = (next - loopEnd).coerceAtMost((loopEnd - loopStart).toDouble())
-                audio.setSustain(false)
-                audio.allNotesOff(fast = true)
+                audio.setSustainAll(false)
+                audio.allNotesOffAll(fast = true)
                 if (eventsDirty) {
                     lastProject?.let { events = buildEvents(it) }
                     eventsDirty = false
@@ -183,7 +183,7 @@ class PlaybackEngine(
                 position.set(newPos)
                 eventIndex.set(lowerBound(events, loopStart))
                 sustain = sustainAt(loopStart, lastProject)
-                audio.setSustain(sustain)
+                audio.setSustainAll(sustain)
                 retriggerSoundingNotes(newPos)
             } else {
                 dispatchUntil(next) { on, off ->
@@ -194,8 +194,8 @@ class PlaybackEngine(
                 if (!loopOn && next >= stopAtTick) {
                     playing = false
                     _isPlaying.value = false
-                    audio.setSustain(false)
-                    audio.allNotesOff()
+                    audio.setSustainAll(false)
+                    audio.allNotesOffAll()
                     break
                 }
             }
@@ -214,12 +214,13 @@ class PlaybackEngine(
             val e = evs[idx]
             when (e.kind) {
                 Kind.SUSTAIN -> {
+                    // Sustain events apply to every track.
                     val isOn = e.velocity >= 64
-                    audio.setSustain(isOn)
+                    audio.setSustainAll(isOn)
                     sustainCallback(isOn, !isOn)
                 }
-                Kind.NOTE_ON -> audio.noteOn(e.pitch, e.velocity, e.channel)
-                Kind.NOTE_OFF -> audio.noteOff(e.pitch, e.channel)
+                Kind.NOTE_ON -> audio.noteOn(e.trackIndex, e.pitch, e.velocity, e.channel)
+                Kind.NOTE_OFF -> audio.noteOff(e.trackIndex, e.pitch, e.channel)
             }
             idx++
         }
@@ -229,9 +230,11 @@ class PlaybackEngine(
     private fun retriggerSoundingNotes(tick: Double) {
         val project = lastProject ?: return
         val t = tick.toInt()
-        for (note in project.track.notes) {
-            if (note.startTick < t && note.endTick > t) {
-                audio.noteOn(note.pitch, note.velocity, note.channel)
+        project.tracks.forEachIndexed { trackIndex, tr ->
+            for (note in tr.notes) {
+                if (note.startTick < t && note.endTick > t) {
+                    audio.noteOn(trackIndex, note.pitch, note.velocity, note.channel)
+                }
             }
         }
     }
@@ -239,26 +242,30 @@ class PlaybackEngine(
     private fun sustainAt(tick: Int, project: Project?): Boolean {
         val p = project ?: return false
         var on = false
-        for (e in p.track.rawEvents) {
-            if (!e.isSustain || e.tick > tick) continue
-            on = e.velocity >= 64
+        for (t in p.tracks) {
+            for (e in t.rawEvents) {
+                if (!e.isSustain || e.tick > tick) continue
+                on = e.velocity >= 64
+            }
         }
         return on
     }
 
     private fun buildEvents(project: Project): List<PlayEvent> {
-        val list = ArrayList<PlayEvent>(project.track.notes.size * 2 + 8)
-        for (n in project.track.notes) {
-            if (n.durationTicks <= 0) continue
-            list += PlayEvent(n.startTick, Kind.NOTE_ON, n.pitch, n.velocity, n.channel)
-            list += PlayEvent(n.endTick, Kind.NOTE_OFF, n.pitch, 0, n.channel)
-        }
-        for (e in project.track.rawEvents) {
-            if (e.isSustain && e.data.size >= 2) {
-                list += PlayEvent(e.tick, Kind.SUSTAIN, velocity = e.data[1])
+        val list = ArrayList<PlayEvent>(project.tracks.sumOf { it.notes.size } * 2 + 8)
+        project.tracks.forEachIndexed { trackIndex, tr ->
+            for (n in tr.notes) {
+                if (n.durationTicks <= 0) continue
+                list += PlayEvent(n.startTick, Kind.NOTE_ON, n.pitch, n.velocity, n.channel, trackIndex)
+                list += PlayEvent(n.endTick, Kind.NOTE_OFF, n.pitch, 0, n.channel, trackIndex)
+            }
+            for (e in tr.rawEvents) {
+                if (e.isSustain && e.data.size >= 2) {
+                    list += PlayEvent(e.tick, Kind.SUSTAIN, velocity = e.data[1], trackIndex = trackIndex)
+                }
             }
         }
-        list.sortWith(compareBy({ it.tick }, { it.kind.ordinal }))
+        list.sortWith(compareBy({ it.tick }, { it.kind.ordinal }, { it.trackIndex }))
         return list
     }
 

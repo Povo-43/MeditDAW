@@ -5,15 +5,15 @@ plugins {
 }
 
 android {
-    namespace = "com.medit.midi"
+    namespace = "com.medit.daw"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.medit.midi"
+        applicationId = "com.medit.daw"
         minSdk = 26
         targetSdk = 34
-        versionCode = 16
-        versionName = "1.3.0"
+        versionCode = 1
+        versionName = "1.0.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

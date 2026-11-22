@@ -77,7 +77,7 @@ class AudioEngine(private val context: Context) {
         val old = synth
         synth = newSynth
         this.font = font
-        _status.value = AudioStatus.Ready(font.name, font.presetName, font.regionCount)
+        _status.value = AudioStatus.Ready(font.name, font.activePreset()?.name ?: "Preset 0", font.regionCount)
         old?.allNotesOff()
         old?.close()
     }

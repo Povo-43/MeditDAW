@@ -52,14 +52,13 @@ data class SfRegion(
  * one has no playable zones. Modulators, filters and LFOs are not applied;
  * they are ignored rather than silently mangled.
  */
-class SoundFont(
-    val name: String,
-    val presetName: String,
-    val sampleData: ShortArray,
-    val regions: List<SfRegion>,
-) {
-    val regionCount: Int get() = regions.size
-}
+/**
+ * A parsed SoundFont 2.04 instrument bank with all of its presets.
+ *
+ * [regions] holds the playable regions of the currently selected preset and
+ * can be switched with [selectPreset]. [sampleData] is shared by every
+ * preset of the bank so switching presets never re-decodes samples.
+ */
 
 object SoundFontLoader {
 
@@ -396,18 +395,24 @@ object SoundFontLoader {
 
         // Every preset is tried in order; stereo pairs are first-class now, so
         // a bank no longer needs a mono fallback pass to be playable.
-        for (presetIndex in presetOrder) {
-            val found = regionsFor(presetIndex)
+        val presetInfos = presets.mapIndexed { idx, p ->
+            SoundFontPreset(idx, p.name, p.program, p.bank)
+        }
+        val sf = SoundFont(
+            name = infoName ?: "Piano SoundFont",
+            sampleData = samples,
+            presets = presetInfos,
+        )
+        var firstPlayable = -1
+        for (i in presets.indices) {
+            val found = regionsFor(i)
             if (found.isNotEmpty()) {
-                return SoundFont(
-                    name = infoName ?: "Piano SoundFont",
-                    presetName = presets[presetIndex].name,
-                    sampleData = samples,
-                    regions = found.sortedWith(compareBy({ it.keyLow }, { it.velocityLow })),
-                )
+                sf.setPresetRegions(i, found.sortedWith(compareBy({ it.keyLow }, { it.velocityLow })))
+                if (firstPlayable < 0) firstPlayable = i
             }
         }
-        throw SoundFontException("再生可能なゾーンがありません")
+        if (firstPlayable < 0) throw SoundFontException("再生可能なゾーンがありません")
+        return sf
     }
 
     fun load(input: ByteArrayInputStream): SoundFont = load(input.readBytes())

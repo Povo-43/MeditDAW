@@ -60,7 +60,7 @@ data class AutosaveData(
  * from SAF import/export: editing never writes to the user's .mid file.
  */
 object ProjectStore {
-    private const val VERSION = 2
+    private const val VERSION = 3
     private const val MAX_FILE = 24 * 1024 * 1024
 
     private fun dir(context: Context): File = File(context.filesDir, "autosave").apply { mkdirs() }
@@ -169,6 +169,8 @@ object ProjectStore {
             track.put("name", t.name)
             track.put("channel", t.channel)
             track.put("isDrum", t.isDrum)
+            t.soundFontPath.takeIf { it.isNotBlank() }?.let { track.put("soundFontPath", it) }
+            track.put("presetIndex", t.presetIndex)
             val notes = JSONArray()
             t.notes.forEach { n ->
                 notes.put(
@@ -297,6 +299,8 @@ object ProjectStore {
                 notes = notes.sortedWith(compareBy({ it.startTick }, { it.pitch })),
                 rawEvents = events.sortedBy { it.tick },
                 isDrum = tj.optBoolean("isDrum", false),
+                soundFontPath = tj.optString("soundFontPath", "").takeUnless { it.isBlank() } ?: "",
+                presetIndex = tj.optInt("presetIndex", 0).coerceIn(0, 127),
             )
         }
         if (tracks.isEmpty()) {

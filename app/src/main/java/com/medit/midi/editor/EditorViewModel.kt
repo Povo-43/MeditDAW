@@ -8,12 +8,14 @@ import android.view.KeyEvent
 import androidx.core.content.FileProvider
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.medit.midi.audio.AudioEngine
 import com.medit.midi.audio.AudioExporter
 import com.medit.midi.audio.AudioExportFormat
 import com.medit.midi.audio.AudioStatus
+import com.medit.midi.audio.MultiAudioEngine
 import com.medit.midi.audio.PlaybackEngine
 import com.medit.midi.audio.SoundFontLoader
+import com.medit.midi.audio.SoundFontPreset
+import com.medit.midi.audio.TrackAudioStatus
 import com.medit.midi.data.AutosaveData
 import com.medit.midi.data.EditorPrefs
 import com.medit.midi.data.ProjectRepository
@@ -146,7 +148,7 @@ data class EditorUiState(
     val canRedo: Boolean,
     val autosave: AutosaveState,
     val boot: BootState,
-    val audio: AudioStatus,
+    val audio: Map<Int, TrackAudioStatus>,
     val isPlaying: Boolean,
     val busy: BusyState,
     val trackPickerVisible: Boolean,
@@ -161,7 +163,7 @@ data class EditorUiState(
 class EditorViewModel(application: Application) : AndroidViewModel(application) {
 
     private val app = application
-    private val audio = AudioEngine(application)
+    private val audio = MultiAudioEngine(application)
     private val playback = PlaybackEngine(audio)
 
     private val _project = MutableStateFlow<Project?>(null)
@@ -193,7 +195,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     val messageFlow = messages.receiveAsFlow()
     val hover: StateFlow<HoverInfo?> = _hover.asStateFlow()
     val inspectorNoteId: StateFlow<Long?> = _inspectorNoteId.asStateFlow()
-    val audioStatus: StateFlow<AudioStatus> = audio.status
+    val audioStatus: StateFlow<Map<Int, TrackAudioStatus>> = audio.statuses
     val uiCommands: SharedFlow<UiCommand> = _uiCommands.asSharedFlow()
     val viewCommands: SharedFlow<ViewCommand> = _viewCommands.asSharedFlow()
     val projectBrowserVisible: StateFlow<Boolean> = _projectBrowserVisible.asStateFlow()
@@ -252,7 +254,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     )
 
     private data class RuntimeState(
-        val audio: AudioStatus,
+        val audio: Map<Int, TrackAudioStatus>,
         val isPlaying: Boolean,
         val trackPickerVisible: Boolean,
         val soundFontCustom: Boolean,
@@ -285,7 +287,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     private val runtimeFlow = combine(
-        audio.status,
+        audio.statuses,
         playback.isPlaying,
         _trackPickerVisible,
         _soundFontCustom,
@@ -356,7 +358,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                 canRedo = false,
                 autosave = AutosaveState.Idle,
                 boot = BootState.Loading,
-                audio = AudioStatus.Loading,
+                audio = emptyMap(),
                 isPlaying = false,
                 busy = BusyState(),
                 trackPickerVisible = false,
@@ -375,9 +377,9 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
             if (stored != null) {
                 _soundFontCustom.value = true
                 _soundFontFileName.value = stored.second
-                audio.loadExternal(stored.first)
+                audio.loadExternalForTrack(0, stored.first)
             } else {
-                audio.loadBundled()
+                audio.loadBundledForTrack(0)
             }
         }
         midiInput.start()
@@ -388,8 +390,9 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         // volume (or the neutral gain for the bundled piano) so the engine
         // always matches the settings slider.
         viewModelScope.launch {
-            audio.status.collect { status ->
-                if (status is AudioStatus.Ready) {
+            audio.statuses.collect { statuses ->
+                val ready = statuses.values.any { it is TrackAudioStatus.Ready }
+                if (ready) {
                     audio.setVolume(if (_soundFontCustom.value) _prefs.value.soundFontVolume else 1f)
                 }
             }
@@ -416,9 +419,14 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     fun project(): Project? = _project.value
     fun prefs(): EditorPrefs = _prefs.value
     fun selection(): Set<Long> = _selection.value
+    /** Index of the currently edited track. */
+    fun activeTrackIndex(): Int {
+        val p = _project.value ?: return 0
+        return p.activeTrack.coerceIn(0, p.tracks.size - 1)
+    }
     fun playheadTick(): Double = playback.currentTick()
     fun isPlaying(): Boolean = playback.isPlaying.value
-    fun isAudioReady(): Boolean = audio.isReady()
+    fun isAudioReady(): Boolean = audio.isReady(activeTrackIndex())
 
     fun noteById(id: Long): Note? = _project.value?.noteById(id)
 
@@ -443,13 +451,13 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun previewNote(pitch: Int, velocity: Int) {
-        if (!audio.isReady()) return
-        val channel = _project.value?.track?.channel ?: 0
+        if (!audio.isReady(activeTrackIndex())) return
+        val channel = _project.value?.tracks?.getOrNull(activeTrackIndex())?.channel ?: 0
         previewJobs[pitch]?.cancel()
-        audio.noteOn(pitch, velocity.coerceIn(1, 127), channel)
+        audio.noteOn(activeTrackIndex(), pitch, velocity.coerceIn(1, 127), channel)
         previewJobs[pitch] = viewModelScope.launch {
             delay(320)
-            audio.noteOff(pitch, channel)
+            audio.noteOff(activeTrackIndex(), pitch, channel)
             previewJobs.remove(pitch)
         }
     }
@@ -465,7 +473,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
             startTick = start,
             durationTicks = dur,
             velocity = _prefs.value.inputVelocity,
-            channel = p.track.channel,
+            channel = p.tracks[activeTrackIndex()].channel,
         )
         pushUndo()
         val notes = p.notes + note
@@ -564,7 +572,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
             n.copy(
                 id = nextId++,
                 startTick = (at + n.startTick).coerceAtLeast(0),
-                channel = p.track.channel,
+                channel = p.tracks[activeTrackIndex()].channel,
             )
         }
         pushUndo()
@@ -787,16 +795,17 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
 
     fun play() {
         val p = _project.value ?: return
-        when (val status = audio.status.value) {
-            is AudioStatus.Loading -> {
+        val ti = activeTrackIndex()
+        when (val status = audio.statuses.value.getOrDefault(ti, TrackAudioStatus.Loading)) {
+            is TrackAudioStatus.Loading -> {
                 postMessage("ピアノ音源を読み込み中です")
                 return
             }
-            is AudioStatus.Failed -> {
+            is TrackAudioStatus.Failed -> {
                 postMessage("音源エラー: ${status.message}")
                 return
             }
-            is AudioStatus.Ready -> Unit
+            is TrackAudioStatus.Ready -> Unit
         }
         playback.play(p)
     }
@@ -928,6 +937,17 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         postMessage("${p.tracks[index].name} を編集します")
     }
 
+    /** Presets of the given track, empty when no SoundFont is loaded. */
+    fun trackPresets(trackIndex: Int): List<SoundFontPreset> {
+        return audio.soundFontFor(trackIndex)?.presets ?: emptyList()
+    }
+
+    /** Switches the SoundFont preset (instrument) of the given track. */
+    fun setTrackPreset(trackIndex: Int, presetIndex: Int) {
+        audio.selectPreset(trackIndex, presetIndex)
+        postMessage("プリセットを${presetIndex + 1}番に切り替えました")
+    }
+
     fun dismissTrackPicker() {
         _trackPickerVisible.value = false
     }
@@ -1013,7 +1033,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
 
         if (tabs.isEmpty()) {
             playback.stop()
-            audio.allNotesOff()
+            audio.allNotesOffAll()
             undoStack.clear()
             redoStack.clear()
             updateHistoryCounts()
@@ -1041,7 +1061,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         if (index !in tabs.indices) return
         val tab = tabs[index]
         playback.stop()
-        audio.allNotesOff()
+        audio.allNotesOffAll()
         _hover.value = null
         _inspectorNoteId.value = null
         _activeTabIndex.value = index
@@ -1229,7 +1249,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     fun exportAudio(uri: Uri, format: AudioExportFormat) {
         val p = _project.value ?: return
         if (_busy.value.exporting) return
-        if (p.track.notes.isEmpty()) {
+        if (p.tracks[activeTrackIndex()].notes.isEmpty()) {
             postMessage("ノートがないため音声を書き出せません")
             return
         }
@@ -1238,7 +1258,8 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) {
                 runCatching {
-                    val font = audio.activeSoundFont()
+                    val ti = activeTrackIndex()
+                    val font = audio.soundFontFor(ti)
                         ?: throw IOException("音源が準備できていません")
                     // Same gain as playback so exports match what was heard.
                     val pcm = AudioExporter.renderPcm(p, font, audio.currentUserVolume())
@@ -1283,7 +1304,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                 onSuccess = { name ->
                     _soundFontCustom.value = true
                     _soundFontFileName.value = name
-                    audio.loadExternal(soundFontFile())
+                    audio.loadExternalForTrack(activeTrackIndex(), soundFontFile())
                     postMessage("SoundFont「$name」を読み込み中です")
                 },
                 onFailure = { t ->
@@ -1302,7 +1323,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
             // The bundled piano always plays at its neutral gain; the saved
             // slider value is kept for the next external SoundFont.
             audio.setVolume(1f)
-            audio.loadBundled()
+            audio.loadBundledForTrack(activeTrackIndex())
             postMessage("内蔵ピアノ音源に戻しました")
         }
     }
@@ -1333,7 +1354,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
             midiPendingNotes.clear()
         } else {
             flushPendingMidiNotes()
-            audio.setSustain(false)
+            audio.setSustainAll(false)
         }
         _midiRecording.value = on
         postMessage(if (on) "MIDI入力を録音します" else "MIDI入力の録音を停止しました")
@@ -1343,20 +1364,20 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         when (event) {
             is MidiInputEvent.NoteOn -> onHardwareNoteOn(event.pitch, event.velocity)
             is MidiInputEvent.NoteOff -> onHardwareNoteOff(event.pitch)
-            is MidiInputEvent.Sustain -> audio.setSustain(event.on)
+            is MidiInputEvent.Sustain -> audio.setSustainAll(event.on)
             is MidiInputEvent.ControlChange -> Unit
             is MidiInputEvent.PitchBend -> Unit
         }
     }
 
-    private fun trackChannel(): Int = _project.value?.track?.channel ?: 0
+    private fun trackChannel(): Int = _project.value?.tracks?.getOrNull(activeTrackIndex())?.channel ?: 0
 
     /**
      * Live-auditions the incoming note and, while recording, remembers where it
      * started so the matching note-off can be turned into an edit.
      */
     private fun onHardwareNoteOn(pitch: Int, velocity: Int) {
-        if (audio.isReady()) audio.noteOn(pitch, velocity.coerceIn(1, 127), trackChannel())
+        if (audio.isReady(activeTrackIndex())) audio.noteOn(activeTrackIndex(), pitch, velocity.coerceIn(1, 127), trackChannel())
         if (!_midiRecording.value) return
         if (midiPendingNotes.size < 128) {
             midiPendingNotes[pitch] = MidiNoteStart(
@@ -1367,7 +1388,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     private fun onHardwareNoteOff(pitch: Int) {
-        if (audio.isReady()) audio.noteOff(pitch, trackChannel())
+        if (audio.isReady(activeTrackIndex())) audio.noteOff(activeTrackIndex(), pitch, trackChannel())
         if (!_midiRecording.value) return
         val pending = midiPendingNotes.remove(pitch) ?: return
         commitRecordedNote(pitch, pending)
@@ -1385,7 +1406,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
             startTick = snappedStart,
             durationTicks = duration.coerceAtLeast(1),
             velocity = start.velocity.coerceIn(1, 127),
-            channel = p.track.channel,
+            channel = p.tracks[activeTrackIndex()].channel,
         )
         if (!midiRecordUndoPushed) {
             pushUndo()
@@ -1563,7 +1584,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     fun onBackground() {
         playback.pause()
         midiInput.sendAllNotesOff()
-        audio.allNotesOff()
+        audio.allNotesOffAll()
         saveNow()
     }
 

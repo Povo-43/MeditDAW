@@ -85,6 +85,10 @@ data class Track(
     /** Original non-note and note events as imported. Note events are rebuilt on export. */
     val rawEvents: List<RawEvent> = emptyList(),
     val isDrum: Boolean = false,
+    /** Path to the SoundFont (.sf2) assigned to this track. Empty means the default bundled SF2. */
+    val soundFontPath: String = "",
+    /** SoundFont preset index within the assigned SoundFont. */
+    val presetIndex: Int = 0,
 ) {
     val noteCount: Int get() = notes.size
     fun sortedNotes(): List<Note> = notes.sortedWith(compareBy({ it.startTick }, { it.pitch }))

@@ -27,6 +27,7 @@ class PianoSynth(
         data class Sustain(val on: Boolean) : Command
         data class Volume(val value: Float) : Command
         data class AllNotesOff(val fast: Boolean) : Command
+        data class Preset(val index: Int) : Command
         data object Shutdown : Command
     }
 
@@ -103,6 +104,11 @@ class PianoSynth(
     fun allNotesOff(fast: Boolean = false) {
         if (!running) return
         commands.add(Command.AllNotesOff(fast))
+    }
+
+    fun selectPreset(index: Int) {
+        if (!running) return
+        commands.add(Command.Preset(index))
     }
 
     fun errorMessage(): String? = lastError
@@ -186,6 +192,12 @@ class PianoSynth(
                     for (v in voices) {
                         v.heldBySustain = false
                         v.release(fast = cmd.fast)
+                    }
+                }
+                is Command.Preset -> {
+                    if (soundFont.selectPreset(cmd.index)) {
+                        val regions = soundFont.regionsForPreset(cmd.index) ?: emptyList()
+                        // Voices will use new regions on next note-on
                     }
                 }
                 Command.Shutdown -> {

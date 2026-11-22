@@ -25,8 +25,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -93,10 +95,13 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -119,6 +124,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.medit.midi.audio.AudioExportFormat
 import com.medit.midi.audio.AudioStatus
+import com.medit.midi.audio.TrackAudioStatus
 import com.medit.midi.editor.AutosaveState
 import com.medit.midi.editor.BootState
 import com.medit.midi.editor.EditorUiState
@@ -454,6 +460,18 @@ private fun EditorScreen(
 ) {
     val context = LocalContext.current
     val rollView = remember { PianoRollView(context) }
+    var pickTargetTrack by remember { mutableIntStateOf(-1) }
+    var presetMenuOpen by remember { mutableIntStateOf(-1) }
+    val getContentLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent(),
+        onResult = { uri ->
+            val indices = project?.tracks?.indices
+            if (uri != null && indices != null && pickTargetTrack in indices) {
+                vm.loadExternalSoundFont(uri)
+                pickTargetTrack = -1
+            }
+        }
+    )
     val rollHost = remember(vm) {
         object : RollHost {
             override fun project() = vm.project()
@@ -550,6 +568,107 @@ private fun EditorScreen(
                 onMeta = { showMeta = true },
                 onMidiInput = { vm.refreshMidiDevices(); showMidiInput = true },
             )
+            // Track list (MeditDAW multi-track)
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+            ) {
+                Text(
+                    text = "トラック",
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(start = 8.dp, bottom = 4.dp),
+                )
+                LazyColumn(
+                    modifier = Modifier.fillMaxWidth(),
+                    contentPadding = PaddingValues(4.dp),
+                ) {
+                    itemsIndexed(project.tracks) { index, track ->
+                        val isActive = index == vm.activeTrackIndex()
+                        val status = ui.audio[index]
+                        val statusText = when (status) {
+                            is TrackAudioStatus.Ready -> "OK"
+                            is TrackAudioStatus.Failed -> "エラー: ${status.message}"
+                            is TrackAudioStatus.Loading -> "読込中…"
+                            TrackAudioStatus.Loading -> "読込中…"
+                            else -> "—"
+                        }
+                        val sf2Label = track.soundFontPath.takeIf { it.isNotBlank() }
+                            ?.let { it.substringAfterLast('/') } ?: "内蔵SF2"
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 4.dp, vertical = 2.dp)
+                                .background(
+                                    if (isActive) Color(0xFF2A3442) else Color.Transparent,
+                                    shape = RoundedCornerShape(4.dp),
+                                ),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                text = "${index + 1}. ${track.name}",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = if (isActive) Color(0xFFF2B65A) else Color(0xFFE7EDF4),
+                                modifier = Modifier.weight(1f),
+                            )
+                            Text(
+                                text = "SF2: $sf2Label (P${track.presetIndex})  $statusText",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color(0xFF93A1B1),
+                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Button(
+                                    onClick = { vm.selectTrack(index) },
+                                    enabled = !isActive,
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF11443F)),
+                                ) {
+                                    Text(text = "選択", style = MaterialTheme.typography.labelSmall)
+                                }
+                                Button(
+                                    onClick = {
+                                        pickTargetTrack = index
+                                        getContentLauncher.launch("audio/*")
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF05233D)),
+                                ) {
+                                    Text(text = "SF2…", style = MaterialTheme.typography.labelSmall)
+                                }
+                                Button(
+                                    onClick = {
+                                        vm.selectTrack(index)
+                                        vm.reloadBundledSoundFont()
+                                        pickTargetTrack = -1
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF201708)),
+                                ) {
+                                    Text(text = "内蔵", style = MaterialTheme.typography.labelSmall)
+                                }
+                                Button(
+                                    onClick = { presetMenuOpen = if (presetMenuOpen == index) -1 else index },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF05233D)),
+                                ) {
+                                    Text(text = "プリセット ${track.presetIndex + 1}", style = MaterialTheme.typography.labelSmall)
+                                }
+                            }
+                        }
+                        DropdownMenu(
+                            expanded = presetMenuOpen == index,
+                            onDismissRequest = { presetMenuOpen = -1 },
+                        ) {
+                            vm.trackPresets(index).forEachIndexed { i, p ->
+                                DropdownMenuItem(
+                                    onClick = {
+                                        vm.setTrackPreset(index, i)
+                                        presetMenuOpen = -1
+                                    },
+                                    text = { Text(text = "${i + 1}. ${p.name}") },
+                                )
+                            }
+                        }
+                    }
+                }
+            }
             Box(
                 Modifier
                     .weight(1f)
@@ -1011,10 +1130,18 @@ private fun TitleBlock(
     val autosaveTint = if (ui.autosave is AutosaveState.Failed) Coral
     else MaterialTheme.colorScheme.onSurfaceVariant
     val audioText = remember(ui.audio) {
-        when (val audio = ui.audio) {
-            is AudioStatus.Loading -> "音源を準備中…"
-            is AudioStatus.Ready -> "音源: ${audio.presetName}"
-            is AudioStatus.Failed -> "音源エラー"
+        val statuses = ui.audio.values
+        if (statuses.isEmpty()) "音源: 未ロード"
+        else {
+            val failed = statuses.count { it is TrackAudioStatus.Failed }
+            val loading = statuses.count { it is TrackAudioStatus.Loading }
+            val ready = statuses.count { it is TrackAudioStatus.Ready }
+            when {
+                failed > 0 -> "音源エラー ($failed)"
+                loading > 0 -> "音源読込中 ($loading)"
+                ready == statuses.size -> "音源: OK ($ready)"
+                else -> "音源: $ready/${statuses.size}"
+            }
         }
     }
     Column(
@@ -1054,7 +1181,7 @@ private fun TitleBlock(
             Icon(
                 Icons.Rounded.GraphicEq,
                 contentDescription = null,
-                tint = if (ui.audio is AudioStatus.Failed) Coral
+                tint = if (ui.audio.values.any { it is TrackAudioStatus.Failed }) Coral
                 else MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(11.dp),
             )
@@ -1062,7 +1189,7 @@ private fun TitleBlock(
             Text(
                 audioText,
                 style = MaterialTheme.typography.labelSmall,
-                color = if (ui.audio is AudioStatus.Failed) Coral
+                color = if (ui.audio.values.any { it is TrackAudioStatus.Failed }) Coral
                 else MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
