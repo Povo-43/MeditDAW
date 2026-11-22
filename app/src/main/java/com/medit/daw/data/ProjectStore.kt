@@ -171,6 +171,8 @@ object ProjectStore {
             track.put("isDrum", t.isDrum)
             t.soundFontPath.takeIf { it.isNotBlank() }?.let { track.put("soundFontPath", it) }
             track.put("presetIndex", t.presetIndex)
+            if (t.isMuted) track.put("isMuted", true)
+            if (t.isSolo) track.put("isSolo", true)
             val notes = JSONArray()
             t.notes.forEach { n ->
                 notes.put(
@@ -301,6 +303,8 @@ object ProjectStore {
                 isDrum = tj.optBoolean("isDrum", false),
                 soundFontPath = tj.optString("soundFontPath", "").takeUnless { it.isBlank() } ?: "",
                 presetIndex = tj.optInt("presetIndex", 0).coerceIn(0, 127),
+                isMuted = tj.optBoolean("isMuted", false),
+                isSolo = tj.optBoolean("isSolo", false),
             )
         }
         if (tracks.isEmpty()) {

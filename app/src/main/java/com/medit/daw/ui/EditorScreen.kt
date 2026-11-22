@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -176,6 +177,15 @@ fun MeditApp(vm: EditorViewModel, initialUri: String? = null) {
         val aacExportLauncher = rememberLauncherForActivityResult(
             ActivityResultContracts.CreateDocument("audio/mp4")
         ) { uri -> uri?.let { vm.exportAudio(it, AudioExportFormat.AAC) } }
+        // Per-track export launchers (MeditDAW)
+        var pendingTrackExportIndex by remember { mutableIntStateOf(-1) }
+        var pendingTrackExportFormat by remember { mutableStateOf(AudioExportFormat.MP3) }
+        val trackMp3ExportLauncher = rememberLauncherForActivityResult(
+            ActivityResultContracts.CreateDocument("audio/mpeg")
+        ) { uri -> uri?.let { vm.exportTrackAudio(it, AudioExportFormat.MP3, pendingTrackExportIndex) } }
+        val trackAacExportLauncher = rememberLauncherForActivityResult(
+            ActivityResultContracts.CreateDocument("audio/mp4")
+        ) { uri -> uri?.let { vm.exportTrackAudio(it, AudioExportFormat.AAC, pendingTrackExportIndex) } }
         val soundFontLauncher = rememberLauncherForActivityResult(
             ActivityResultContracts.OpenDocument()
         ) { uri -> uri?.let(vm::loadExternalSoundFont) }
@@ -212,6 +222,15 @@ fun MeditApp(vm: EditorViewModel, initialUri: String? = null) {
                     UiCommand.ImportMidi -> onImport()
                     UiCommand.ExportMidi -> onExport()
                     is UiCommand.ExportAudio -> onExportAudio(command.format)
+                    is UiCommand.ExportTrackAudio -> {
+                        pendingTrackExportIndex = command.trackIndex
+                        pendingTrackExportFormat = command.format
+                        val fileName = vm.suggestedTrackAudioFileName(command.trackIndex, command.format)
+                        when (command.format) {
+                            AudioExportFormat.MP3 -> trackMp3ExportLauncher.launch(fileName)
+                            AudioExportFormat.AAC -> trackAacExportLauncher.launch(fileName)
+                        }
+                    }
                     is UiCommand.Share -> {
                         val send = Intent(Intent.ACTION_SEND).apply {
                             type = command.mimeType
@@ -462,6 +481,7 @@ private fun EditorScreen(
     val rollView = remember { PianoRollView(context) }
     var pickTargetTrack by remember { mutableIntStateOf(-1) }
     var presetMenuOpen by remember { mutableIntStateOf(-1) }
+    var showTrackPanel by remember { mutableStateOf(true) }
     val getContentLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent(),
         onResult = { uri ->
@@ -554,6 +574,8 @@ private fun EditorScreen(
                 compact = compact,
                 vm = vm,
                 onBpm = { showBpm = true },
+                showTrackPanel = showTrackPanel,
+                onToggleTrackPanel = { showTrackPanel = !showTrackPanel },
                 onMeter = { showMeter = true },
                 onNew = { showNewConfirm = true },
                 onImport = onImport,
@@ -568,6 +590,8 @@ private fun EditorScreen(
                 onMeta = { showMeta = true },
                 onMidiInput = { vm.refreshMidiDevices(); showMidiInput = true },
             )
+            // Track tab bar + sound source bar (narrow screens)
+            if (compact && showTrackPanel) {
             // Track tab bar (classic-style chips)
             LazyRow(
                 modifier = Modifier
@@ -731,34 +755,68 @@ private fun EditorScreen(
                     }
                 }
             }
-            Box(
-                Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-            ) {
-                AndroidView(
-                    factory = { rollView },
-                    update = { view ->
-                        view.syncState(
-                            project = ui.project,
-                            prefs = ui.prefs,
-                            selection = ui.selection,
-                            viewport = ui.viewport,
-                            epoch = ui.viewportEpoch,
-                            playing = ui.isPlaying,
+            } // end of narrow-screen track bars
+            if (!compact && showTrackPanel) {
+                // Wide screen: side-by-side track panel (left) and piano roll (right)
+                Row(Modifier.weight(1f).fillMaxWidth()) {
+                    TrackPanel(
+                        project = project,
+                        vm = vm,
+                        ui = ui,
+                        getContentLauncher = { mimeType -> getContentLauncher.launch(mimeType) },
+                        presetMenuOpen = presetMenuOpen,
+                        onPresetMenuToggle = { presetMenuOpen = if (presetMenuOpen == it) -1 else it },
+                        modifier = Modifier.fillMaxHeight().width(300.dp),
+                    )
+                    Box(Modifier.weight(1f).fillMaxHeight()) {
+                        AndroidView(
+                            factory = { rollView },
+                            update = { view ->
+                                view.syncState(
+                                    project = ui.project,
+                                    prefs = ui.prefs,
+                                    selection = ui.selection,
+                                    viewport = ui.viewport,
+                                    epoch = ui.viewportEpoch,
+                                    playing = ui.isPlaying,
+                                )
+                            },
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .clipToBounds(),
                         )
-                    },
-                    // AndroidView stopped clipping its child automatically, and
-                    // the roll paints its background with Canvas.drawColor(). On
-                    // an unclipped canvas that fills the whole window and covers
-                    // every composable drawn before it — the title, transport and
-                    // menu — leaving them touchable but invisible. Clip the
-                    // interop view to its layout bounds so its drawing stays
-                    // inside the roll area.
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .clipToBounds(),
-                )
+                    }
+                }
+            } else {
+                Box(
+                    Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                ) {
+                    AndroidView(
+                        factory = { rollView },
+                        update = { view ->
+                            view.syncState(
+                                project = ui.project,
+                                prefs = ui.prefs,
+                                selection = ui.selection,
+                                viewport = ui.viewport,
+                                epoch = ui.viewportEpoch,
+                                playing = ui.isPlaying,
+                            )
+                        },
+                        // AndroidView stopped clipping its child automatically, and
+                        // the roll paints its background with Canvas.drawColor(). On
+                        // an unclipped canvas that fills the whole window and covers
+                        // every composable drawn before it — the title, transport and
+                        // menu — leaving them touchable but invisible. Clip the
+                        // interop view to its layout bounds so its drawing stays
+                        // inside the roll area.
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clipToBounds(),
+                    )
+                }
             }
             ContextDock(
                 ui = ui,
@@ -947,6 +1005,8 @@ private fun TopBar(
     compact: Boolean,
     vm: EditorViewModel,
     onBpm: () -> Unit,
+    showTrackPanel: Boolean = false,
+    onToggleTrackPanel: () -> Unit = {},
     onMeter: () -> Unit,
     onNew: () -> Unit,
     onImport: () -> Unit,
@@ -974,6 +1034,8 @@ private fun TopBar(
                     vm = vm,
                     onRename = onRename,
                     onBpm = onBpm,
+                    showTrackPanel = showTrackPanel,
+                    onToggleTrackPanel = onToggleTrackPanel,
                     onMeter = onMeter,
                     onNew = onNew,
                     onImport = onImport,
@@ -994,6 +1056,8 @@ private fun TopBar(
                     vm = vm,
                     onRename = onRename,
                     onBpm = onBpm,
+                    showTrackPanel = showTrackPanel,
+                    onToggleTrackPanel = onToggleTrackPanel,
                     onMeter = onMeter,
                     onNew = onNew,
                     onImport = onImport,
@@ -1035,6 +1099,8 @@ private fun WideTopRow(
     vm: EditorViewModel,
     onRename: () -> Unit,
     onBpm: () -> Unit,
+    showTrackPanel: Boolean,
+    onToggleTrackPanel: () -> Unit,
     onMeter: () -> Unit,
     onNew: () -> Unit,
     onImport: () -> Unit,
@@ -1075,7 +1141,8 @@ private fun WideTopRow(
             MetaChip(
                 text = project.track.name,
                 icon = Icons.Rounded.Piano,
-                onClick = vm::openTrackPicker,
+                onClick = onToggleTrackPanel,
+                active = showTrackPanel,
             )
         }
         Spacer(Modifier.width(6.dp))
@@ -1106,6 +1173,8 @@ private fun CompactTopRows(
     vm: EditorViewModel,
     onRename: () -> Unit,
     onBpm: () -> Unit,
+    showTrackPanel: Boolean,
+    onToggleTrackPanel: () -> Unit,
     onMeter: () -> Unit,
     onNew: () -> Unit,
     onImport: () -> Unit,
@@ -2089,5 +2158,188 @@ private fun DockButton(action: DockAction) {
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
+    }
+}
+
+/**
+ * Side panel (wide screens): vertical list of track cards with per-track
+ * mute/solo toggles, SoundFont info and a kebab menu for per-track actions.
+ * Styled after the classic MetaChip / info line design language.
+ */
+@Composable
+private fun TrackPanel(
+    project: Project,
+    vm: EditorViewModel,
+    ui: EditorUiState,
+    getContentLauncher: (String) -> Unit,
+    presetMenuOpen: Int,
+    onPresetMenuToggle: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+    ) {
+        Column {
+            Text(
+                "トラック",
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(start = 14.dp, top = 10.dp, bottom = 6.dp),
+            )
+            LazyColumn(Modifier.fillMaxSize()) {
+                itemsIndexed(project.tracks) { index, track ->
+                    val isActive = index == vm.activeTrackIndex()
+                    val status = ui.audio[index]
+                    val statusText = when (status) {
+                        is TrackAudioStatus.Ready -> "OK"
+                        is TrackAudioStatus.Failed -> "エラー: ${status.message}"
+                        is TrackAudioStatus.Loading -> "読込中…"
+                        else -> "—"
+                    }
+                    val sf2Label = track.soundFontPath.takeIf { it.isNotBlank() }
+                        ?.let { it.substringAfterLast('/') } ?: "内蔵SF2"
+                    var trackMenuOpen by remember { mutableStateOf(false) }
+
+                    Surface(
+                        onClick = { vm.selectTrack(index) },
+                        shape = RoundedCornerShape(8.dp),
+                        color = if (isActive) MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)
+                        else MaterialTheme.colorScheme.surfaceContainer,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp, vertical = 3.dp),
+                    ) {
+                        Column(Modifier.padding(8.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    Icons.Rounded.Audiotrack,
+                                    contentDescription = null,
+                                    tint = if (isActive) MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier.size(14.dp),
+                                )
+                                Spacer(Modifier.width(5.dp))
+                                Text(
+                                    "${index + 1}. ${track.name}",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = if (isActive) MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 1,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                // Kebab menu: SF2 / export / delete
+                                Box {
+                                    Text(
+                                        text = "⋯",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier
+                                            .clickable(onClick = { trackMenuOpen = !trackMenuOpen })
+                                            .padding(horizontal = 4.dp),
+                                    )
+                                    DropdownMenu(
+                                        expanded = trackMenuOpen,
+                                        onDismissRequest = { trackMenuOpen = false },
+                                    ) {
+                                        DropdownMenuItem(
+                                            text = { Text("SF2を読み込む…") },
+                                            onClick = {
+                                                getContentLauncher("audio/*")
+                                                trackMenuOpen = false
+                                            },
+                                        )
+                                        DropdownMenuItem(
+                                            text = { Text("内蔵ピアノ音源に戻す") },
+                                            onClick = {
+                                                vm.selectTrack(index)
+                                                vm.reloadBundledSoundFont()
+                                                trackMenuOpen = false
+                                            },
+                                        )
+                                        DropdownMenuItem(
+                                            text = { Text("このトラックを${AudioExportFormat.MP3.label}で書き出す") },
+                                            onClick = {
+                                                vm.requestTrackExport(index, AudioExportFormat.MP3)
+                                                trackMenuOpen = false
+                                            },
+                                        )
+                                        DropdownMenuItem(
+                                            text = { Text("このトラックを${AudioExportFormat.AAC.label}で書き出す") },
+                                            onClick = {
+                                                vm.requestTrackExport(index, AudioExportFormat.AAC)
+                                                trackMenuOpen = false
+                                            },
+                                        )
+                                        HorizontalDivider()
+                                        if (project.tracks.size > 1) {
+                                            DropdownMenuItem(
+                                                text = { Text("このトラックを削除") },
+                                                onClick = {
+                                                    vm.removeTrack(index)
+                                                    trackMenuOpen = false
+                                                },
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                            Text(
+                                "SF2: $sf2Label · $statusText",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                // Mute (M) / Solo (S) toggle buttons, DAW style.
+                                TextButton(
+                                    onClick = { vm.toggleTrackMute(index) },
+                                    colors = ButtonDefaults.textButtonColors(
+                                        contentColor = if (track.isMuted) MaterialTheme.colorScheme.error
+                                        else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                                    ),
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                                    modifier = Modifier.heightIn(min = 26.dp),
+                                ) {
+                                    Text("M", style = MaterialTheme.typography.labelSmall)
+                                }
+                                TextButton(
+                                    onClick = { vm.toggleTrackSolo(index) },
+                                    colors = ButtonDefaults.textButtonColors(
+                                        contentColor = if (track.isSolo) MaterialTheme.colorScheme.tertiary
+                                        else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                                    ),
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                                    modifier = Modifier.heightIn(min = 26.dp),
+                                ) {
+                                    Text("S", style = MaterialTheme.typography.labelSmall)
+                                }
+                                Spacer(Modifier.width(6.dp))
+                                Text(
+                                    "プリセット ${track.presetIndex + 1}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
+                    // Per-track preset dropdown
+                    DropdownMenu(
+                        expanded = presetMenuOpen == index,
+                        onDismissRequest = { onPresetMenuToggle(-1) },
+                    ) {
+                        vm.trackPresets(index).forEachIndexed { i, p ->
+                            DropdownMenuItem(
+                                text = { Text("${i + 1}. ${p.name}") },
+                                onClick = {
+                                    vm.setTrackPreset(index, i)
+                                    onPresetMenuToggle(-1)
+                                },
+                            )
+                        }
+                    }
+                }
+            }
+        }
     }
 }

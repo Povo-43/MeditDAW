@@ -253,7 +253,11 @@ class PlaybackEngine(
 
     private fun buildEvents(project: Project): List<PlayEvent> {
         val list = ArrayList<PlayEvent>(project.tracks.sumOf { it.notes.size } * 2 + 8)
+        // Solo logic: if any track is soloed, only solo tracks are heard.
+        val anySolo = project.tracks.any { it.isSolo }
         project.tracks.forEachIndexed { trackIndex, tr ->
+            val silenced = tr.isMuted || (anySolo && !tr.isSolo)
+            if (silenced) return@forEachIndexed
             for (n in tr.notes) {
                 if (n.durationTicks <= 0) continue
                 list += PlayEvent(n.startTick, Kind.NOTE_ON, n.pitch, n.velocity, n.channel, trackIndex)

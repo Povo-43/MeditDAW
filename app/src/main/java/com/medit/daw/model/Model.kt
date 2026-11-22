@@ -89,6 +89,10 @@ data class Track(
     val soundFontPath: String = "",
     /** SoundFont preset index within the assigned SoundFont. */
     val presetIndex: Int = 0,
+    /** When true, this track is not played back. */
+    val isMuted: Boolean = false,
+    /** When true, only solo tracks are played back. */
+    val isSolo: Boolean = false,
 ) {
     val noteCount: Int get() = notes.size
     fun sortedNotes(): List<Note> = notes.sortedWith(compareBy({ it.startTick }, { it.pitch }))

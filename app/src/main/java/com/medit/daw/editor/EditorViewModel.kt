@@ -128,6 +128,7 @@ sealed interface UiCommand {
     data object ImportMidi : UiCommand
     data object ExportMidi : UiCommand
     data class ExportAudio(val format: AudioExportFormat) : UiCommand
+    data class ExportTrackAudio(val trackIndex: Int, val format: AudioExportFormat) : UiCommand
     data class Share(val uri: Uri, val mimeType: String, val title: String) : UiCommand
 }
 
@@ -179,6 +180,8 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     private val _boot = MutableStateFlow<BootState>(BootState.Loading)
     private val _busy = MutableStateFlow(BusyState())
     private val _trackPickerVisible = MutableStateFlow(false)
+    /** Side panel (wide screens) / bottom tab bar (narrow screens) visibility. */
+    private val _trackPanelVisible = MutableStateFlow(true)
     private val _soundFontCustom = MutableStateFlow(false)
     private val _soundFontFileName = MutableStateFlow<String?>(null)
     private val _inspectorNoteId = MutableStateFlow<Long?>(null)
@@ -200,6 +203,8 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     val uiCommands: SharedFlow<UiCommand> = _uiCommands.asSharedFlow()
     val viewCommands: SharedFlow<ViewCommand> = _viewCommands.asSharedFlow()
     val projectBrowserVisible: StateFlow<Boolean> = _projectBrowserVisible.asStateFlow()
+    /** Whether the track list panel is visible (wide screens) / tab bar visible (narrow screens). */
+    val trackPanelVisible: StateFlow<Boolean> = _trackPanelVisible.asStateFlow()
 
     private val midiInput = MidiInputManager(application)
 
@@ -968,6 +973,82 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         postMessage("${p.tracks[index].name} を削除しました")
     }
 
+    /** Toggles the mute state of the given track. */
+    fun toggleTrackMute(index: Int) {
+        val p = _project.value ?: return
+        if (index !in p.tracks.indices) return
+        val t = p.tracks[index]
+        val newTracks = p.tracks.toMutableList().also { it[index] = t.copy(isMuted = !t.isMuted) }
+        val updated = p.copy(tracks = newTracks)
+        _project.value = updated
+        playback.setProject(updated)
+        postMessage("${t.name} を${if (!t.isMuted) "ミュート" else "ミュート解除"}しました")
+    }
+
+    /** Toggles the solo state of the given track. */
+    fun toggleTrackSolo(index: Int) {
+        val p = _project.value ?: return
+        if (index !in p.tracks.indices) return
+        val t = p.tracks[index]
+        val newTracks = p.tracks.toMutableList().also { it[index] = t.copy(isSolo = !t.isSolo) }
+        val updated = p.copy(tracks = newTracks)
+        _project.value = updated
+        playback.setProject(updated)
+        postMessage("${t.name} を${if (!t.isSolo) "ソロ" else "ソロ解除"}しました")
+    }
+
+    /** Toggles the track list panel visibility. */
+    fun toggleTrackPanel() {
+        _trackPanelVisible.value = !_trackPanelVisible.value
+    }
+
+    /** Opens the per-track audio export flow (SAF picker handled by the host). */
+    fun requestTrackExport(trackIndex: Int, format: AudioExportFormat) {
+        if (_project.value?.tracks?.getOrNull(trackIndex)?.notes.isNullOrEmpty()) {
+            postMessage("ノートがないため音声を書き出せません")
+            return
+        }
+        _uiCommands.tryEmit(UiCommand.ExportTrackAudio(trackIndex, format))
+    }
+
+    /** Exports only the given track as MP3/AAC. */
+    fun exportTrackAudio(uri: Uri, format: AudioExportFormat, trackIndex: Int) {
+        val p = _project.value ?: return
+        if (_busy.value.exporting) return
+        if (trackIndex !in p.tracks.indices || p.tracks[trackIndex].notes.isEmpty()) {
+            postMessage("ノートがないため音声を書き出せません")
+            return
+        }
+        playback.pause()
+        _busy.value = _busy.value.copy(exporting = true)
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    val font = audio.soundFontFor(trackIndex)
+                        ?: throw IOException("音源が準備できていません")
+                    val single = p.copy(tracks = listOf(p.tracks[trackIndex]), activeTrack = 0)
+                    val pcm = AudioExporter.renderPcm(single, font, audio.currentUserVolume())
+                    if (pcm.isEmpty()) throw IOException("書き出す音がありません")
+                    when (format) {
+                        AudioExportFormat.MP3 ->
+                            app.contentResolver.openOutputStream(uri, "wt")?.use { out ->
+                                AudioExporter.encodeMp3(pcm, out)
+                            } ?: throw IOException("保存先を開けません")
+                        AudioExportFormat.AAC ->
+                            app.contentResolver.openFileDescriptor(uri, "rwt")?.use { fd ->
+                                AudioExporter.encodeAac(pcm, fd.fileDescriptor)
+                            } ?: throw IOException("保存先を開けません")
+                    }
+                }
+            }
+            result.fold(
+                onSuccess = { postMessage("${p.tracks[trackIndex].name} を${format.label}で書き出しました") },
+                onFailure = { t -> postMessage("書き出しに失敗しました: ${t.message ?: t.javaClass.simpleName}") }
+            )
+            _busy.value = _busy.value.copy(exporting = false)
+        }
+    }
+
     /** Presets of the given track, empty when no SoundFont is loaded. */
     fun trackPresets(trackIndex: Int): List<SoundFontPreset> {
         return audio.soundFontFor(trackIndex)?.presets ?: emptyList()
@@ -1190,6 +1271,14 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     fun suggestedAudioFileName(format: AudioExportFormat): String {
         val title = _project.value?.title ?: "piano"
         val safe = title.replace(Regex("[\\\\/:*?\"<>|]"), "_").ifBlank { "piano" }
+        return "$safe.${format.extension}"
+    }
+
+    /** Suggested file name when exporting a single track. */
+    fun suggestedTrackAudioFileName(trackIndex: Int, format: AudioExportFormat): String {
+        val p = _project.value
+        val trackName = p?.tracks?.getOrNull(trackIndex)?.name ?: "track"
+        val safe = trackName.replace(Regex("[\\\\/:*?\"<>|]"), "_").ifBlank { "track" }
         return "$safe.${format.extension}"
     }
 
