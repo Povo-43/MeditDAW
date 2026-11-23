@@ -181,6 +181,9 @@ fun MeditApp(vm: EditorViewModel, initialUri: String? = null) {
         // Per-track export launchers (MeditDAW)
         var pendingTrackExportIndex by remember { mutableIntStateOf(-1) }
         var pendingTrackExportFormat by remember { mutableStateOf(AudioExportFormat.MP3) }
+        val trackMidiExportLauncher = rememberLauncherForActivityResult(
+            ActivityResultContracts.CreateDocument("audio/midi")
+        ) { uri -> uri?.let { vm.exportTrackMidi(it, pendingTrackExportIndex) } }
         val trackMp3ExportLauncher = rememberLauncherForActivityResult(
             ActivityResultContracts.CreateDocument("audio/mpeg")
         ) { uri -> uri?.let { vm.exportTrackAudio(it, AudioExportFormat.MP3, pendingTrackExportIndex) } }
@@ -231,6 +234,10 @@ fun MeditApp(vm: EditorViewModel, initialUri: String? = null) {
                             AudioExportFormat.MP3 -> trackMp3ExportLauncher.launch(fileName)
                             AudioExportFormat.AAC -> trackAacExportLauncher.launch(fileName)
                         }
+                    }
+                    is UiCommand.ExportTrackMidi -> {
+                        pendingTrackExportIndex = command.trackIndex
+                        trackMidiExportLauncher.launch(vm.suggestedTrackMidiFileName(command.trackIndex))
                     }
                     is UiCommand.Share -> {
                         val send = Intent(Intent.ACTION_SEND).apply {
@@ -480,24 +487,11 @@ private fun EditorScreen(
 ) {
     val context = LocalContext.current
     val rollView = remember { PianoRollView(context) }
-    var pickTargetTrack by remember { mutableIntStateOf(-1) }
     var presetMenuOpen by remember { mutableIntStateOf(-1) }
     var kebabMenuOpen by remember { mutableStateOf(false) }
     var fontMenuOpen by remember { mutableStateOf(false) }
     var showFontLibrary by remember { mutableStateOf(false) }
     var showTrackPanel by remember { mutableStateOf(true) }
-    val getContentLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent(),
-        onResult = { uri ->
-            val indices = project?.tracks?.indices
-            if (uri != null && indices != null && pickTargetTrack in indices) {
-                // Import into the global library and assign to the track that
-                // requested it.
-                vm.loadExternalSoundFont(uri, pickTargetTrack)
-                pickTargetTrack = -1
-            }
-        }
-    )
     val rollHost = remember(vm) {
         object : RollHost {
             override fun project() = vm.project()
@@ -590,7 +584,6 @@ private fun EditorScreen(
                 onSettings = { showSettings = true },
                 onHelp = { showHelp = true },
                 onRename = { showRename = true },
-                onLoadSoundFont = onLoadSoundFont,
                 onProjects = vm::openProjectBrowser,
                 onShare = onShare,
                 onMeta = { showMeta = true },
@@ -768,14 +761,6 @@ private fun EditorScreen(
                                 }
                                 HorizontalDivider()
                                 DropdownMenuItem(
-                                    text = { Text("SF2を読み込む…") },
-                                    onClick = {
-                                        pickTargetTrack = activeIdx
-                                        getContentLauncher.launch("audio/*")
-                                        fontMenuOpen = false
-                                    },
-                                )
-                                DropdownMenuItem(
                                     text = { Text("音源ライブラリ…") },
                                     onClick = {
                                         showFontLibrary = true
@@ -840,24 +825,31 @@ private fun EditorScreen(
                             onDismissRequest = { kebabMenuOpen = false },
                         ) {
                             DropdownMenuItem(
-                                text = { Text("SF2を読み込む…") },
-                                onClick = {
-                                    pickTargetTrack = activeIdx
-                                    getContentLauncher.launch("audio/*")
-                                    kebabMenuOpen = false
-                                },
-                            )
-                            DropdownMenuItem(
                                 text = { Text("音源ライブラリ…") },
                                 onClick = {
                                     showFontLibrary = true
                                     kebabMenuOpen = false
                                 },
                             )
+                            HorizontalDivider()
                             DropdownMenuItem(
-                                text = { Text("内蔵ピアノ音源に戻す") },
+                                text = { Text("MIDIで書き出す") },
                                 onClick = {
-                                    vm.reloadBundledSoundFont()
+                                    vm.requestTrackMidiExport(activeIdx)
+                                    kebabMenuOpen = false
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("MP3で書き出す") },
+                                onClick = {
+                                    vm.requestTrackExport(activeIdx, AudioExportFormat.MP3)
+                                    kebabMenuOpen = false
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("M4Aで書き出す") },
+                                onClick = {
+                                    vm.requestTrackExport(activeIdx, AudioExportFormat.AAC)
                                     kebabMenuOpen = false
                                 },
                             )
@@ -883,10 +875,6 @@ private fun EditorScreen(
                         project = project,
                         vm = vm,
                         ui = ui,
-                        onImportForTrack = { trackIndex ->
-                            pickTargetTrack = trackIndex
-                            getContentLauncher.launch("audio/*")
-                        },
                         onOpenLibrary = { showFontLibrary = true },
                         presetMenuOpen = presetMenuOpen,
                         onPresetMenuToggle = { presetMenuOpen = if (presetMenuOpen == it) -1 else it },
@@ -992,7 +980,7 @@ private fun EditorScreen(
             ui = ui,
             vm = vm,
             onDismiss = { showSettings = false },
-            onLoadSoundFont = onLoadSoundFont,
+            onOpenLibrary = { showFontLibrary = true },
             onHelp = {
                 showSettings = false
                 showHelp = true
@@ -1147,7 +1135,6 @@ private fun TopBar(
     onSettings: () -> Unit,
     onHelp: () -> Unit,
     onRename: () -> Unit,
-    onLoadSoundFont: () -> Unit,
     onProjects: () -> Unit,
     onShare: () -> Unit,
     onMeta: () -> Unit,
@@ -1175,7 +1162,6 @@ private fun TopBar(
                     onExportAudio = onExportAudio,
                     onSettings = onSettings,
                     onHelp = onHelp,
-                    onLoadSoundFont = onLoadSoundFont,
                     onProjects = onProjects,
                     onShare = onShare,
                     onMeta = onMeta,
@@ -1197,7 +1183,6 @@ private fun TopBar(
                     onExportAudio = onExportAudio,
                     onSettings = onSettings,
                     onHelp = onHelp,
-                    onLoadSoundFont = onLoadSoundFont,
                     onProjects = onProjects,
                     onShare = onShare,
                     onMeta = onMeta,
@@ -1240,7 +1225,6 @@ private fun WideTopRow(
     onExportAudio: (AudioExportFormat) -> Unit,
     onSettings: () -> Unit,
     onHelp: () -> Unit,
-    onLoadSoundFont: () -> Unit,
     onProjects: () -> Unit,
     onShare: () -> Unit,
     onMeta: () -> Unit,
@@ -1287,7 +1271,6 @@ private fun WideTopRow(
             onImport = onImport,
             onExport = onExport,
             onExportAudio = onExportAudio,
-            onSoundFont = onLoadSoundFont,
             onSettings = onSettings,
             onHelp = onHelp,
             onProjects = onProjects,
@@ -1314,7 +1297,6 @@ private fun CompactTopRows(
     onExportAudio: (AudioExportFormat) -> Unit,
     onSettings: () -> Unit,
     onHelp: () -> Unit,
-    onLoadSoundFont: () -> Unit,
     onProjects: () -> Unit,
     onShare: () -> Unit,
     onMeta: () -> Unit,
@@ -1344,7 +1326,6 @@ private fun CompactTopRows(
                 onImport = onImport,
                 onExport = onExport,
                 onExportAudio = onExportAudio,
-                onSoundFont = onLoadSoundFont,
                 onSettings = onSettings,
                 onHelp = onHelp,
                 onProjects = onProjects,
@@ -1720,7 +1701,6 @@ private fun OverflowMenu(
     onImport: () -> Unit,
     onExport: () -> Unit,
     onExportAudio: (AudioExportFormat) -> Unit,
-    onSoundFont: () -> Unit,
     onSettings: () -> Unit,
     onHelp: () -> Unit,
     onProjects: () -> Unit,
@@ -1792,19 +1772,11 @@ private fun OverflowMenu(
                 },
             )
             DropdownMenuItem(
-                text = { Text("AAC 音声を書き出す (.m4a)") },
+                text = { Text("M4A 音声を書き出す (.m4a)") },
                 leadingIcon = { Icon(Icons.Rounded.MusicNote, contentDescription = null) },
                 onClick = {
                     expanded = false
                     onExportAudio(AudioExportFormat.AAC)
-                },
-            )
-            DropdownMenuItem(
-                text = { Text("SoundFontを読み込む") },
-                leadingIcon = { Icon(Icons.Rounded.Audiotrack, contentDescription = null) },
-                onClick = {
-                    expanded = false
-                    onSoundFont()
                 },
             )
             HorizontalDivider()
@@ -2303,7 +2275,6 @@ private fun TrackPanel(
     project: Project,
     vm: EditorViewModel,
     ui: EditorUiState,
-    onImportForTrack: (Int) -> Unit,
     onOpenLibrary: () -> Unit,
     presetMenuOpen: Int,
     onPresetMenuToggle: (Int) -> Unit,
@@ -2377,37 +2348,9 @@ private fun TrackPanel(
                                         onDismissRequest = { trackMenuOpen = false },
                                     ) {
                                         DropdownMenuItem(
-                                            text = { Text("SF2を読み込む…") },
-                                            onClick = {
-                                                onImportForTrack(index)
-                                                trackMenuOpen = false
-                                            },
-                                        )
-                                        DropdownMenuItem(
                                             text = { Text("音源ライブラリ…") },
                                             onClick = {
                                                 onOpenLibrary()
-                                                trackMenuOpen = false
-                                            },
-                                        )
-                                        DropdownMenuItem(
-                                            text = { Text("内蔵ピアノ音源に戻す") },
-                                            onClick = {
-                                                vm.assignTrackFont(index, Sf2Source.Bundled)
-                                                trackMenuOpen = false
-                                            },
-                                        )
-                                        DropdownMenuItem(
-                                            text = { Text("このトラックを${AudioExportFormat.MP3.label}で書き出す") },
-                                            onClick = {
-                                                vm.requestTrackExport(index, AudioExportFormat.MP3)
-                                                trackMenuOpen = false
-                                            },
-                                        )
-                                        DropdownMenuItem(
-                                            text = { Text("このトラックを${AudioExportFormat.AAC.label}で書き出す") },
-                                            onClick = {
-                                                vm.requestTrackExport(index, AudioExportFormat.AAC)
                                                 trackMenuOpen = false
                                             },
                                         )
@@ -2470,13 +2413,6 @@ private fun TrackPanel(
                                     }
                                     HorizontalDivider()
                                     DropdownMenuItem(
-                                        text = { Text("SF2を読み込む…") },
-                                        onClick = {
-                                            onImportForTrack(index)
-                                            fontMenuOpen = false
-                                        },
-                                    )
-                                    DropdownMenuItem(
                                         text = { Text("音源ライブラリ…") },
                                         onClick = {
                                             onOpenLibrary()
@@ -2524,6 +2460,17 @@ private fun TrackPanel(
                                     }
                                 }
                             }
+                            // Per-track export buttons: MIDI / MP3 / M4A.
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(top = 2.dp),
+                            ) {
+                                TrackExportChip("MIDI") { vm.requestTrackMidiExport(index) }
+                                Spacer(Modifier.width(4.dp))
+                                TrackExportChip("MP3") { vm.requestTrackExport(index, AudioExportFormat.MP3) }
+                                Spacer(Modifier.width(4.dp))
+                                TrackExportChip("M4A") { vm.requestTrackExport(index, AudioExportFormat.AAC) }
+                            }
                         }
                     }
                     // Per-track preset dropdown
@@ -2556,6 +2503,24 @@ private fun TrackPanel(
                 }
             }
         }
+    }
+}
+
+/** Small export chip used on track cards (MIDI / MP3 / M4A). */
+@Composable
+private fun TrackExportChip(label: String, onClick: () -> Unit) {
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(6.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.padding(horizontal = 9.dp, vertical = 3.dp),
+        )
     }
 }
 

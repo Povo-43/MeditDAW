@@ -131,6 +131,7 @@ sealed interface UiCommand {
     data object ExportMidi : UiCommand
     data class ExportAudio(val format: AudioExportFormat) : UiCommand
     data class ExportTrackAudio(val trackIndex: Int, val format: AudioExportFormat) : UiCommand
+    data class ExportTrackMidi(val trackIndex: Int) : UiCommand
     data class Share(val uri: Uri, val mimeType: String, val title: String) : UiCommand
 }
 
@@ -1011,6 +1012,44 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         _uiCommands.tryEmit(UiCommand.ExportTrackAudio(trackIndex, format))
     }
 
+    /** Opens the per-track MIDI export flow (SAF picker handled by the host). */
+    fun requestTrackMidiExport(trackIndex: Int) {
+        if (_project.value?.tracks?.getOrNull(trackIndex)?.notes.isNullOrEmpty()) {
+            postMessage("ノートがないためMIDIを書き出せません")
+            return
+        }
+        _uiCommands.tryEmit(UiCommand.ExportTrackMidi(trackIndex))
+    }
+
+    /** Exports only the given track as a MIDI file. */
+    fun exportTrackMidi(uri: Uri, trackIndex: Int) {
+        val p = _project.value ?: return
+        if (_busy.value.exporting) return
+        if (trackIndex !in p.tracks.indices || p.tracks[trackIndex].notes.isEmpty()) {
+            postMessage("ノートがないためMIDIを書き出せません")
+            return
+        }
+        _busy.value = _busy.value.copy(exporting = true)
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    // Serialize a project view that contains only this track.
+                    val single = p.copy(tracks = listOf(p.tracks[trackIndex]), activeTrack = 0)
+                    val bytes = MidiFile.write(single)
+                    app.contentResolver.openOutputStream(uri, "wt")?.use { out ->
+                        out.write(bytes)
+                        out.flush()
+                    } ?: throw IOException("保存先を開けません")
+                }
+            }
+            result.fold(
+                onSuccess = { postMessage("${p.tracks[trackIndex].name} をMIDIで書き出しました") },
+                onFailure = { t -> postMessage("書き出しに失敗しました: ${t.message ?: t.javaClass.simpleName}") }
+            )
+            _busy.value = _busy.value.copy(exporting = false)
+        }
+    }
+
     /** Exports only the given track as MP3/AAC. */
     fun exportTrackAudio(uri: Uri, format: AudioExportFormat, trackIndex: Int) {
         val p = _project.value ?: return
@@ -1394,6 +1433,14 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         return "$safe.${format.extension}"
     }
 
+    /** Suggested file name when exporting a single track as MIDI. */
+    fun suggestedTrackMidiFileName(trackIndex: Int): String {
+        val p = _project.value
+        val trackName = p?.tracks?.getOrNull(trackIndex)?.name ?: "track"
+        val safe = trackName.replace(Regex("[\\\\/:*?\"<>|]"), "_").ifBlank { "track" }
+        return "$safe.mid"
+    }
+
     fun importMidi(uri: Uri) {
         if (_boot.value is BootState.Loading) {
             pendingImport = uri
@@ -1523,11 +1570,12 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     /**
      * Imports an SF2 file into the global library (stored under the app's
      * private `soundfonts/` directory with a unique name, so importing a new
-     * file never overwrites an older one) and assigns it to [trackIndex].
+     * file never overwrites an older one) and assigns it to the active track.
      */
-    fun loadExternalSoundFont(uri: Uri, trackIndex: Int = activeTrackIndex()) {
+    fun loadExternalSoundFont(uri: Uri) {
         if (_busy.value.soundFont) return
         _busy.value = _busy.value.copy(soundFont = true)
+        val trackIndex = activeTrackIndex()
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) {
                 runCatching {
@@ -1557,10 +1605,8 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                     } else {
                         audio.loadForTrack(trackIndex, source)
                     }
-                    if (trackIndex == activeTrackIndex()) {
-                        _soundFontCustom.value = true
-                        _soundFontFileName.value = file.name
-                    }
+                    _soundFontCustom.value = true
+                    _soundFontFileName.value = file.name
                     postMessage("SoundFont「$displayName」をライブラリに追加しました")
                 },
                 onFailure = { t ->
@@ -1569,25 +1615,6 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
             )
             _busy.value = _busy.value.copy(soundFont = false)
         }
-    }
-
-    /** Re-loads the bundled piano for the active track (clears its library file). */
-    fun reloadBundledSoundFont() {
-        val index = activeTrackIndex()
-        val track = _project.value?.tracks?.getOrNull(index) ?: return
-        val newTracks = _project.value!!.tracks.toMutableList().also {
-            it[index] = track.copy(soundFontPath = "")
-        }
-        val updated = _project.value!!.copy(tracks = newTracks)
-        _project.value = updated
-        playback.setProject(updated)
-        // The bundled piano always plays at its neutral gain; the saved
-        // slider value is kept for the next external SoundFont.
-        audio.setVolume(1f)
-        audio.loadForTrack(index, Sf2Source.Bundled, track.presetIndex)
-        _soundFontCustom.value = false
-        _soundFontFileName.value = null
-        postMessage("内蔵ピアノ音源に戻しました")
     }
 
     // ---------------------------------------------------------------------

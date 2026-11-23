@@ -34,7 +34,7 @@ enum class AudioExportFormat(
     val mimeType: String,
 ) {
     MP3("MP3", "mp3", "audio/mpeg"),
-    AAC("AAC (.m4a)", "m4a", "audio/mp4"),
+    AAC("M4A", "m4a", "audio/mp4"),
 }
 
 /**

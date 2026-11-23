@@ -756,7 +756,7 @@ fun SettingsDialog(
     ui: EditorUiState,
     vm: EditorViewModel,
     onDismiss: () -> Unit,
-    onLoadSoundFont: () -> Unit,
+    onOpenLibrary: () -> Unit,
     onHelp: () -> Unit,
 ) {
     AppDialog(
@@ -825,7 +825,7 @@ fun SettingsDialog(
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
         Spacer(Modifier.height(12.dp))
         SectionTitle("音源", Icons.Rounded.GraphicEq)
-        AudioStatusCard(ui, vm, onLoadSoundFont)
+        AudioStatusCard(ui, vm, onOpenLibrary)
 
         Spacer(Modifier.height(12.dp))
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
@@ -849,7 +849,7 @@ fun SettingsDialog(
 private fun AudioStatusCard(
     ui: EditorUiState,
     vm: EditorViewModel,
-    onLoadSoundFont: () -> Unit,
+    onOpenLibrary: () -> Unit,
 ) {
     Surface(
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -924,23 +924,13 @@ private fun AudioStatusCard(
             }
             Spacer(Modifier.height(10.dp))
             Button(
-                onClick = onLoadSoundFont,
+                onClick = onOpenLibrary,
                 enabled = !ui.busy.soundFont,
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Icon(Icons.Rounded.FolderOpen, contentDescription = null, modifier = Modifier.size(17.dp))
                 Spacer(Modifier.size(6.dp))
-                Text(if (ui.busy.soundFont) "読込中…" else "SF2ファイルを選ぶ")
-            }
-            Spacer(Modifier.height(8.dp))
-            OutlinedButton(
-                onClick = vm::reloadBundledSoundFont,
-                enabled = !ui.busy.soundFont,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Icon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(17.dp))
-                Spacer(Modifier.size(6.dp))
-                Text(if (ui.soundFontCustom) "内蔵ピアノに戻す" else "内蔵ピアノを再読込")
+                Text(if (ui.busy.soundFont) "読込中…" else "音源ライブラリ…")
             }
             if (ui.soundFontCustom) {
                 Spacer(Modifier.height(12.dp))
