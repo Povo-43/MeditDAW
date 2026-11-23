@@ -35,7 +35,7 @@ data class EditorPrefs(
     val autoScroll: Boolean = true,
     val fingerEditing: Boolean = true,
     val penOnlySelection: Boolean = false,
-    val showSustainLane: Boolean = false,
+    val showSustainLane: Boolean = true,
     /** Shows the editable velocity graph overlaid on the lower part of the roll. */
     val velocityEditor: Boolean = false,
     /**
@@ -371,7 +371,7 @@ object ProjectStore {
             autoScroll = json.optBoolean("autoScroll", true),
             fingerEditing = json.optBoolean("fingerEditing", true),
             penOnlySelection = json.optBoolean("penOnlySelection", false),
-            showSustainLane = json.optBoolean("showSustainLane", false),
+            showSustainLane = json.optBoolean("showSustainLane", true),
             velocityEditor = json.optBoolean("velocityEditor", false),
             soundFontVolume = json.optDouble("soundFontVolume", 1.0)
                 .takeUnless { it.isNaN() }?.toFloat()?.coerceIn(0f, 2f) ?: 1f,

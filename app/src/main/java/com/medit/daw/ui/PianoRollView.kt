@@ -173,6 +173,7 @@ class PianoRollView @JvmOverloads constructor(
         KEY_PREVIEW,
         ERASE,
         VELOCITY_DRAG,
+        SUSTAIN_DRAG,
     }
 
     private var mode = Mode.NONE
@@ -515,6 +516,54 @@ class PianoRollView @JvmOverloads constructor(
         prefs.velocityEditor && velocityLaneTop >= contentTop + dp(20f) &&
             x >= contentLeft && y >= velocityLaneTop && y <= contentBottom
 
+    // ------------------------------------------------------------------
+    // Sustain pedal (CC64) lane along the bottom edge.
+    // ------------------------------------------------------------------
+
+    /** Pedal-down events of the active track as [down, up) tick segments. */
+    private fun sustainSegments(): List<Pair<Int, Int>> {
+        val p = project ?: return emptyList()
+        val evs = p.track.rawEvents.filter { it.isSustain }.sortedBy { it.tick }
+        val out = ArrayList<Pair<Int, Int>>()
+        var down: Int? = null
+        for (e in evs) {
+            val on = e.data[1] >= 64
+            if (on) {
+                if (down == null) down = e.tick
+            } else {
+                val d = down
+                if (d != null) {
+                    out += d to e.tick
+                    down = null
+                }
+            }
+        }
+        val open = down
+        if (open != null) out += open to (p.songEndTick() + p.ppq)
+        return out
+    }
+
+    private val sustainLaneHeight: Float get() = dp(30f)
+
+    /** Bottom strip reserved for the velocity editor, when it is on. */
+    private val velocityReserved: Float
+        get() = if (prefs.velocityEditor) velocityLaneHeight else 0f
+
+    private val sustainLaneTop: Float
+        get() = contentBottom - velocityReserved - sustainLaneHeight
+
+    private fun sustainLaneContains(x: Float, y: Float): Boolean =
+        prefs.showSustainLane && sustainLaneTop >= contentTop + dp(20f) &&
+            x >= contentLeft && x <= contentRight &&
+            y >= sustainLaneTop && y < contentBottom - velocityReserved
+
+    /** Segment whose span covers [tick], or null. */
+    private fun sustainSegmentAt(tick: Int): Pair<Int, Int>? =
+        sustainSegments().firstOrNull { (down, up) -> tick >= down && tick < up }
+
+    /** Current drag preview (down tick, up tick) while drawing a segment. */
+    private var sustainPreview: Pair<Int, Int>? = null
+
     private fun clampViewport() {
         rowHeightDp = rowHeightDp.coerceIn(MIN_ROW_HEIGHT, MAX_ROW_HEIGHT)
         dpPerTick = dpPerTick.coerceIn(MIN_DP_PER_TICK, MAX_DP_PER_TICK)
@@ -633,6 +682,7 @@ class PianoRollView @JvmOverloads constructor(
                 beginLoopDrag(downX)
             }
             velocityLaneContains(downX, downY) -> beginVelocityTouch(event)
+            sustainLaneContains(downX, downY) -> beginSustainTouch(event)
             else -> beginRollTouch(event)
         }
         invalidate()
@@ -756,6 +806,51 @@ class PianoRollView @JvmOverloads constructor(
         return best
     }
 
+    /**
+     * Pedal lane touch: tap toggles a segment under the finger, a horizontal
+     * drag draws a new segment from the press point to the release point.
+     */
+    private fun beginSustainTouch(event: MotionEvent) {
+        mode = Mode.SUSTAIN_DRAG
+        val downTick = xToTick(event.x).toInt().coerceAtLeast(0)
+        sustainDragStart = downTick
+        sustainPreview = null
+        performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+    }
+
+    private var sustainDragStart = 0
+
+    private fun updateSustainTouch(x: Float) {
+        val p = project ?: return
+        val minLen = max(p.ppq / 8, 1)
+        val start = sustainDragStart
+        val end = xToTick(x).toInt().coerceAtLeast(0)
+        val lo = min(start, end)
+        val hi = max(start, end) + minLen
+        sustainPreview = lo to hi
+        invalidate()
+    }
+
+    private fun commitSustainTouch() {
+        val p = project ?: return
+        val preview = sustainPreview
+        if (preview != null && gestureMoved) {
+            val (lo, hi) = preview
+            host?.addSustainSegment(lo, hi)
+        } else {
+            // Tap: toggle the segment under the finger.
+            val tick = sustainDragStart
+            val existing = sustainSegmentAt(tick)
+            if (existing != null) {
+                host?.removeSustainSegment(existing.first)
+            } else {
+                host?.addSustainSegment(tick, tick + p.ppq)
+            }
+        }
+        sustainPreview = null
+        invalidate()
+    }
+
     private fun updateTouch(event: MotionEvent) {
         if (mode == Mode.PINCH) {
             updatePinch(event)
@@ -804,6 +899,7 @@ class PianoRollView @JvmOverloads constructor(
                 }
             }
             Mode.VELOCITY_DRAG -> applyVelocityDrag(y)
+            Mode.SUSTAIN_DRAG -> updateSustainTouch(x)
             Mode.PAN -> applyPan(dx, dy)
             Mode.DRAW -> {
                 val tick = snapIfEnabled(xToTick(x).toInt()).coerceAtLeast(0)
@@ -895,6 +991,7 @@ class PianoRollView @JvmOverloads constructor(
                 velocityDisplayPitch = null
                 velocityDisplayVelocity = null
             }
+            Mode.SUSTAIN_DRAG -> commitSustainTouch()
             Mode.DRAW -> {
                 val start = drawStartTick.coerceAtLeast(0)
                 val end = max(start + 1, drawEndTick)
@@ -956,6 +1053,7 @@ class PianoRollView @JvmOverloads constructor(
         velocityPrimaryId = null
         velocityDisplayPitch = null
         velocityDisplayVelocity = null
+        sustainPreview = null
         invalidate()
     }
 
@@ -1498,6 +1596,7 @@ class PianoRollView @JvmOverloads constructor(
         drawNotes(canvas, p)
         drawGhost(canvas, p)
         drawVelocityEditor(canvas, p)
+        drawSustainLane(canvas, p)
         drawPlayheadLine(canvas)
         drawMarquee(canvas)
         drawEmptyHint(canvas, p)
@@ -1716,6 +1815,62 @@ class PianoRollView @JvmOverloads constructor(
      * node vertically changes its velocity (and the whole selection when
      * several notes are selected).
      */
+    /**
+     * Sustain pedal (CC64) lane along the bottom edge: teal bars for each
+     * pedal-down → pedal-up span. Tap toggles a segment, drag draws one.
+     */
+    private fun drawSustainLane(canvas: Canvas, p: Project) {
+        if (!prefs.showSustainLane) return
+        val laneTop = sustainLaneTop
+        if (laneTop < contentTop + dp(20f)) return
+        val laneBottom = contentBottom - velocityReserved
+
+        fillPaint.color = withAlpha(colPanel, 0.96f)
+        canvas.drawRect(contentLeft, laneTop, contentRight, laneBottom, fillPaint)
+        strokePaint.color = withAlpha(colSelected, 0.45f)
+        strokePaint.strokeWidth = dp(1f)
+        canvas.drawLine(contentLeft, laneTop, contentRight, laneTop, strokePaint)
+
+        boldTextPaint.color = withAlpha(colText, 0.85f)
+        boldTextPaint.textSize = sp(9f)
+        canvas.drawText("PEDAL", contentLeft + dp(8f), laneTop + dp(12f), boldTextPaint)
+
+        // Visible segments plus the in-progress drag preview.
+        val segments = ArrayList(sustainSegments())
+        if (mode == Mode.SUSTAIN_DRAG) {
+            sustainPreview?.let { segments += it }
+        }
+        val barTop = laneTop + dp(7f)
+        val barBottom = laneBottom - dp(7f)
+        for ((down, up) in segments) {
+            val x0 = tickToX(down)
+            val x1 = tickToX(up).coerceAtLeast(x0 + dp(3f))
+            if (x1 < contentLeft || x0 > contentRight) continue
+            val clampedLeft = maxOf(x0, contentLeft + dp(26f))
+            val clampedRight = minOf(x1, contentRight)
+            if (clampedRight <= clampedLeft) continue
+            fillPaint.color = withAlpha(colSelected, 0.75f)
+            val rect = RectF(clampedLeft, barTop, clampedRight, barBottom)
+            canvas.drawRoundRect(rect, dp(4f), dp(4f), fillPaint)
+            // Pedal-down marker.
+            fillPaint.color = withAlpha(colNote, 0.95f)
+            canvas.drawRoundRect(
+                RectF(clampedLeft, barTop, clampedLeft + dp(4f), barBottom),
+                dp(2f), dp(2f), fillPaint,
+            )
+        }
+        if (segments.isEmpty()) {
+            smallTextPaint.color = withAlpha(colDim, 0.8f)
+            smallTextPaint.textSize = sp(9f)
+            canvas.drawText(
+                "タップでペダル追加 ・ ドラッグで範囲指定",
+                contentLeft + dp(70f),
+                laneTop + dp(13.5f),
+                smallTextPaint,
+            )
+        }
+    }
+
     private fun drawVelocityEditor(canvas: Canvas, p: Project) {
         if (!prefs.velocityEditor) return
         val laneTop = velocityLaneTop

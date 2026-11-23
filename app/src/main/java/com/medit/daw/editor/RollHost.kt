@@ -29,4 +29,8 @@ interface RollHost {
     fun setLoopRange(startTick: Int, endTick: Int)
     fun onViewportSettled(viewport: ViewportState)
     fun onHoverInfo(info: HoverInfo?)
+    /** Adds a sustain-pedal segment (CC64 down at start, up at end). */
+    fun addSustainSegment(startTick: Int, endTick: Int)
+    /** Removes the sustain segment whose pedal-down event sits at [downTick]. */
+    fun removeSustainSegment(downTick: Int)
 }
