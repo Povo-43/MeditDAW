@@ -20,7 +20,14 @@ import kotlin.math.max
 class PlaybackEngine(
     private val audio: MultiAudioEngine,
 ) {
-    private enum class Kind { SUSTAIN, NOTE_OFF, NOTE_ON }
+    // Ordinal order matters: events on the same tick are sorted by kind, so
+    // controllers and bends are applied before the notes they affect.
+    private enum class Kind { SUSTAIN, CC, BEND, BEND_RANGE, NOTE_OFF, NOTE_ON }
+
+    // Field reuse for the non-note kinds:
+    //  - CC:         pitch = controller, velocity = value
+    //  - BEND:       pitch = LSB, velocity = MSB (14-bit)
+    //  - BEND_RANGE: velocity = range in cents
 
     private data class PlayEvent(
         val tick: Int,
@@ -221,6 +228,9 @@ class PlaybackEngine(
                 }
                 Kind.NOTE_ON -> audio.noteOn(e.trackIndex, e.pitch, e.velocity, e.channel)
                 Kind.NOTE_OFF -> audio.noteOff(e.trackIndex, e.pitch, e.channel)
+                Kind.CC -> audio.sendCc(e.trackIndex, e.pitch, e.velocity)
+                Kind.BEND -> audio.setPitchBend(e.trackIndex, (e.velocity shl 7) or e.pitch)
+                Kind.BEND_RANGE -> audio.setBendRangeCents(e.trackIndex, e.velocity.toFloat())
             }
             idx++
         }
@@ -263,9 +273,35 @@ class PlaybackEngine(
                 list += PlayEvent(n.startTick, Kind.NOTE_ON, n.pitch, n.velocity, n.channel, trackIndex)
                 list += PlayEvent(n.endTick, Kind.NOTE_OFF, n.pitch, 0, n.channel, trackIndex)
             }
+            // Raw channel events: sustain (global, as before), other CCs, and
+            // pitch bend. RPN (0,0) data entry becomes a bend-range change.
+            val bendScanner = BendRangeScanner()
             for (e in tr.rawEvents) {
-                if (e.isSustain && e.data.size >= 2) {
-                    list += PlayEvent(e.tick, Kind.SUSTAIN, velocity = e.data[1], trackIndex = trackIndex)
+                if (e.isMeta || e.isSysex) continue
+                val status = e.status and 0xF0
+                when {
+                    status == 0xB0 && e.data.size >= 2 -> {
+                        val cc = e.data[0]
+                        val value = e.data[1]
+                        when {
+                            cc == 64 -> list += PlayEvent(e.tick, Kind.SUSTAIN, velocity = value, trackIndex = trackIndex)
+                            else -> {
+                                // RPN/NRPN bookkeeping runs on every CC; a
+                                // completed bend-range data entry emits a
+                                // range change, other data entries are inert.
+                                val range = bendScanner.feed(cc, value)
+                                when {
+                                    range != null ->
+                                        list += PlayEvent(e.tick, Kind.BEND_RANGE, velocity = range.toInt(), trackIndex = trackIndex)
+                                    cc == 6 || cc == 38 || cc in 98..101 -> Unit
+                                    else -> list += PlayEvent(e.tick, Kind.CC, pitch = cc, velocity = value, channel = e.channel, trackIndex = trackIndex)
+                                }
+                            }
+                        }
+                    }
+                    status == 0xE0 && e.data.size >= 2 -> {
+                        list += PlayEvent(e.tick, Kind.BEND, pitch = e.data[0], velocity = e.data[1], channel = e.channel, trackIndex = trackIndex)
+                    }
                 }
             }
         }

@@ -45,6 +45,8 @@ import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.Audiotrack
 import androidx.compose.material.icons.rounded.AutoFixHigh
 import androidx.compose.material.icons.rounded.BarChart
+import androidx.compose.material.icons.rounded.ExpandLess
+import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.HighlightAlt
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CheckCircle
@@ -84,6 +86,8 @@ import androidx.compose.material.icons.rounded.ZoomIn
 import androidx.compose.material.icons.rounded.ZoomOut
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Slider
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledIconButton
@@ -103,6 +107,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -131,6 +136,7 @@ import com.medit.daw.editor.AutosaveState
 import com.medit.daw.editor.BootState
 import com.medit.daw.editor.EditorUiState
 import com.medit.daw.editor.EditorViewModel
+import com.medit.daw.model.RawEvent
 import com.medit.daw.editor.HoverInfo
 import com.medit.daw.editor.MidiUiState
 import com.medit.daw.editor.RollHost
@@ -492,6 +498,12 @@ private fun EditorScreen(
     var fontMenuOpen by remember { mutableStateOf(false) }
     var showFontLibrary by remember { mutableStateOf(false) }
     var showTrackPanel by remember { mutableStateOf(true) }
+    /** Show/hide the per-track info line (sound source / preset / M·S). */
+    var showTrackDetails by rememberSaveable { mutableStateOf(true) }
+    /** Track index being renamed, -1 when closed. */
+    var renameTrackIndex by remember { mutableIntStateOf(-1) }
+    /** Track whose CC / bend events are being edited, -1 when closed. */
+    var midiEventsTrack by remember { mutableIntStateOf(-1) }
     val rollHost = remember(vm) {
         object : RollHost {
             override fun project() = vm.project()
@@ -581,6 +593,7 @@ private fun EditorScreen(
                 onImport = onImport,
                 onExport = onExport,
                 onExportAudio = onExportAudio,
+                onOpenLibrary = { showFontLibrary = true },
                 onSettings = { showSettings = true },
                 onHelp = { showHelp = true },
                 onRename = { showRename = true },
@@ -638,6 +651,20 @@ private fun EditorScreen(
                     }
                 }
                 item {
+                    // Collapse / expand the per-track info line below.
+                    IconButton(
+                        onClick = { showTrackDetails = !showTrackDetails },
+                        modifier = Modifier.size(34.dp),
+                    ) {
+                        Icon(
+                            if (showTrackDetails) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                            contentDescription = if (showTrackDetails) "トラック情報を隠す" else "トラック情報を表示",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(19.dp),
+                        )
+                    }
+                }
+                item {
                     Surface(
                         onClick = { vm.addTrack() },
                         shape = RoundedCornerShape(11.dp),
@@ -670,7 +697,7 @@ private fun EditorScreen(
             // Selected track sound source bar (classic-style info line)
             val activeIdx = vm.activeTrackIndex()
             val activeTrack = project.tracks.getOrNull(activeIdx)
-            if (activeTrack != null) {
+            if (activeTrack != null && showTrackDetails) {
                 val sf2Label = activeTrack.soundFontPath.takeIf { it.isNotBlank() }
                     ?.let { it.substringAfterLast('/')?.removeSuffix(".sf2") } ?: "内蔵ピアノ"
                 val presets = vm.trackPresets(activeIdx)
@@ -825,9 +852,23 @@ private fun EditorScreen(
                             onDismissRequest = { kebabMenuOpen = false },
                         ) {
                             DropdownMenuItem(
+                                text = { Text("名前を変更…") },
+                                onClick = {
+                                    renameTrackIndex = activeIdx
+                                    kebabMenuOpen = false
+                                },
+                            )
+                            DropdownMenuItem(
                                 text = { Text("音源ライブラリ…") },
                                 onClick = {
                                     showFontLibrary = true
+                                    kebabMenuOpen = false
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("CC・ベンド編集…") },
+                                onClick = {
+                                    midiEventsTrack = activeIdx
                                     kebabMenuOpen = false
                                 },
                             )
@@ -876,6 +917,8 @@ private fun EditorScreen(
                         vm = vm,
                         ui = ui,
                         onOpenLibrary = { showFontLibrary = true },
+                        onRenameTrack = { renameTrackIndex = it },
+                        onEditEvents = { midiEventsTrack = it },
                         presetMenuOpen = presetMenuOpen,
                         onPresetMenuToggle = { presetMenuOpen = if (presetMenuOpen == it) -1 else it },
                         modifier = Modifier.fillMaxHeight().width(300.dp),
@@ -993,6 +1036,29 @@ private fun EditorScreen(
             vm = vm,
             onDismiss = { showFontLibrary = false },
             onLoadSoundFont = onLoadSoundFont,
+        )
+    }
+    if (renameTrackIndex >= 0) {
+        val idx = renameTrackIndex
+        RenameDialog(
+            initial = project.tracks.getOrNull(idx)?.name ?: "",
+            onDismiss = { renameTrackIndex = -1 },
+            onApply = { name ->
+                vm.renameTrack(idx, name)
+                renameTrackIndex = -1
+            },
+            title = "トラック名",
+            label = "トラック名",
+            hint = "トラック名はトラック一覧と書き出すファイル名の初期値に使われます。",
+            maxLength = 40,
+        )
+    }
+    if (midiEventsTrack >= 0) {
+        MidiEventsDialog(
+            vm = vm,
+            trackIndex = midiEventsTrack,
+            trackName = project.tracks.getOrNull(midiEventsTrack)?.name ?: "",
+            onDismiss = { midiEventsTrack = -1 },
         )
     }
     if (showHelp) {
@@ -1132,6 +1198,7 @@ private fun TopBar(
     onImport: () -> Unit,
     onExport: () -> Unit,
     onExportAudio: (AudioExportFormat) -> Unit,
+    onOpenLibrary: () -> Unit,
     onSettings: () -> Unit,
     onHelp: () -> Unit,
     onRename: () -> Unit,
@@ -1160,6 +1227,7 @@ private fun TopBar(
                     onImport = onImport,
                     onExport = onExport,
                     onExportAudio = onExportAudio,
+                    onOpenLibrary = onOpenLibrary,
                     onSettings = onSettings,
                     onHelp = onHelp,
                     onProjects = onProjects,
@@ -1181,6 +1249,7 @@ private fun TopBar(
                     onImport = onImport,
                     onExport = onExport,
                     onExportAudio = onExportAudio,
+                    onOpenLibrary = onOpenLibrary,
                     onSettings = onSettings,
                     onHelp = onHelp,
                     onProjects = onProjects,
@@ -1223,6 +1292,7 @@ private fun WideTopRow(
     onImport: () -> Unit,
     onExport: () -> Unit,
     onExportAudio: (AudioExportFormat) -> Unit,
+    onOpenLibrary: () -> Unit,
     onSettings: () -> Unit,
     onHelp: () -> Unit,
     onProjects: () -> Unit,
@@ -1271,6 +1341,7 @@ private fun WideTopRow(
             onImport = onImport,
             onExport = onExport,
             onExportAudio = onExportAudio,
+            onOpenLibrary = onOpenLibrary,
             onSettings = onSettings,
             onHelp = onHelp,
             onProjects = onProjects,
@@ -1295,6 +1366,7 @@ private fun CompactTopRows(
     onImport: () -> Unit,
     onExport: () -> Unit,
     onExportAudio: (AudioExportFormat) -> Unit,
+    onOpenLibrary: () -> Unit,
     onSettings: () -> Unit,
     onHelp: () -> Unit,
     onProjects: () -> Unit,
@@ -1326,6 +1398,7 @@ private fun CompactTopRows(
                 onImport = onImport,
                 onExport = onExport,
                 onExportAudio = onExportAudio,
+                onOpenLibrary = onOpenLibrary,
                 onSettings = onSettings,
                 onHelp = onHelp,
                 onProjects = onProjects,
@@ -1701,6 +1774,7 @@ private fun OverflowMenu(
     onImport: () -> Unit,
     onExport: () -> Unit,
     onExportAudio: (AudioExportFormat) -> Unit,
+    onOpenLibrary: () -> Unit,
     onSettings: () -> Unit,
     onHelp: () -> Unit,
     onProjects: () -> Unit,
@@ -1777,6 +1851,14 @@ private fun OverflowMenu(
                 onClick = {
                     expanded = false
                     onExportAudio(AudioExportFormat.AAC)
+                },
+            )
+            DropdownMenuItem(
+                text = { Text("音源ライブラリ…") },
+                leadingIcon = { Icon(Icons.Rounded.Audiotrack, contentDescription = null) },
+                onClick = {
+                    expanded = false
+                    onOpenLibrary()
                 },
             )
             HorizontalDivider()
@@ -2276,6 +2358,8 @@ private fun TrackPanel(
     vm: EditorViewModel,
     ui: EditorUiState,
     onOpenLibrary: () -> Unit,
+    onRenameTrack: (Int) -> Unit,
+    onEditEvents: (Int) -> Unit,
     presetMenuOpen: Int,
     onPresetMenuToggle: (Int) -> Unit,
     modifier: Modifier = Modifier,
@@ -2348,9 +2432,23 @@ private fun TrackPanel(
                                         onDismissRequest = { trackMenuOpen = false },
                                     ) {
                                         DropdownMenuItem(
+                                            text = { Text("名前を変更…") },
+                                            onClick = {
+                                                onRenameTrack(index)
+                                                trackMenuOpen = false
+                                            },
+                                        )
+                                        DropdownMenuItem(
                                             text = { Text("音源ライブラリ…") },
                                             onClick = {
                                                 onOpenLibrary()
+                                                trackMenuOpen = false
+                                            },
+                                        )
+                                        DropdownMenuItem(
+                                            text = { Text("CC・ベンド編集…") },
+                                            onClick = {
+                                                onEditEvents(index)
                                                 trackMenuOpen = false
                                             },
                                         )
@@ -2522,6 +2620,297 @@ private fun TrackExportChip(label: String, onClick: () -> Unit) {
             modifier = Modifier.padding(horizontal = 9.dp, vertical = 3.dp),
         )
     }
+}
+
+/** Well-known controllers shown by name in the event editor. */
+private val CC_NAMES = mapOf(
+    1 to "モジュレーション",
+    7 to "ボリューム",
+    10 to "パン",
+    11 to "エクスプレッション",
+    64 to "ダンパー",
+    65 to "ポルタメント",
+    66 to "ソステヌート",
+    67 to "ソフト",
+    71 to "レゾナンス",
+    74 to "カットオフ",
+    91 to "リバーブ",
+    93 to "コーラス",
+    120 to "オールサウンドオフ",
+    121 to "リセットオール",
+    123 to "オールノートオフ",
+)
+
+private fun ccLabel(cc: Int, value: Int): String {
+    val name = CC_NAMES[cc] ?: "コントローラー"
+    return "CC$cc $name = $value"
+}
+
+private fun bendPercent(value14: Int): Int =
+    (((value14 - 8192) / 8191.0) * 100).toInt()
+
+/**
+ * Editor for the track's controller events: CC, pitch bend and RPN (0,0)
+ * bend-range data entry. Events are stored as raw MIDI events on the track,
+ * so they survive save/load and round-trip through MIDI files.
+ */
+@Composable
+private fun MidiEventsDialog(
+    vm: EditorViewModel,
+    trackIndex: Int,
+    trackName: String,
+    onDismiss: () -> Unit,
+) {
+    val ppq = vm.projectPpq()
+    var refresh by remember { mutableIntStateOf(0) }
+    var selected by remember { mutableStateOf<RawEvent?>(null) }
+    // Add-form state
+    var addCcNumber by remember { mutableIntStateOf(7) }
+    var addCcValue by remember { mutableFloatStateOf(100f) }
+    var addBendPercent by remember { mutableFloatStateOf(0f) }
+    var addBendRange by remember { mutableFloatStateOf(2f) }
+    var addBeatsText by remember { mutableStateOf("1.0") }
+    // Edit-form state
+    var editBeatsText by remember { mutableStateOf("0.0") }
+    var editValue by remember { mutableFloatStateOf(0f) }
+
+    fun beatsToTick(text: String): Int =
+        ((text.toDoubleOrNull() ?: 0.0) * ppq).toInt().coerceAtLeast(0)
+
+    val events = remember(refresh) { vm.trackControlEvents(trackIndex) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        titleContentColor = MaterialTheme.colorScheme.onSurface,
+        textContentColor = MaterialTheme.colorScheme.onSurface,
+        title = { Text("CC・ベンド編集 — $trackName") },
+        text = {
+            Column {
+                if (selected == null) {
+                    // ---- event list ----
+                    if (events.isEmpty()) {
+                        Text(
+                            "コントローラーイベントはありません。下のボタンで追加できます。",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 220.dp),
+                    ) {
+                        items(events.size) { i ->
+                            val ev = events[i]
+                            val label = when {
+                                ev.isCc -> ccLabel(ev.data[0], ev.data[1])
+                                ev.isPitchBend -> "ピッチベンド ${bendPercent(ev.pitchBendValue14)}%"
+                                ev.isProgramChange -> "プログラム ${ev.data[0]}"
+                                else -> "その他"
+                            }
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = MaterialTheme.colorScheme.surfaceContainer,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 2.dp),
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                                ) {
+                                    Column(Modifier.weight(1f).clickable {
+                                        selected = ev
+                                        editBeatsText = "%.2f".format(java.util.Locale.JAPAN, ev.tick / ppq.toDouble())
+                                        editValue = when {
+                                            ev.isPitchBend -> bendPercent(ev.pitchBendValue14).toFloat()
+                                            ev.isCc -> ev.data[1].toFloat()
+                                            else -> (ev.data.firstOrNull() ?: 0).toFloat()
+                                        }
+                                    }) {
+                                        Text(
+                                            label,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                        Text(
+                                            "%.2f 小節".format(java.util.Locale.JAPAN, ev.tick / ppq.toDouble()),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                    IconButton(onClick = {
+                                        vm.removeTrackEvent(trackIndex, ev)
+                                        refresh++
+                                    }) {
+                                        Icon(
+                                            Icons.Rounded.Close,
+                                            contentDescription = "削除",
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.size(16.dp),
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = addBeatsText,
+                        onValueChange = { addBeatsText = it },
+                        label = { Text("追加位置（小節）") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        TextButton(
+                            onClick = {
+                                vm.addTrackCc(trackIndex, beatsToTick(addBeatsText), addCcNumber, addCcValue.toInt())
+                                refresh++
+                            },
+                            contentPadding = PaddingValues(horizontal = 8.dp),
+                        ) { Text("CC追加", style = MaterialTheme.typography.labelSmall) }
+                        Spacer(Modifier.width(4.dp))
+                        TextButton(
+                            onClick = {
+                                vm.addTrackPitchBend(trackIndex, beatsToTick(addBeatsText), addBendPercent)
+                                refresh++
+                            },
+                            contentPadding = PaddingValues(horizontal = 8.dp),
+                        ) { Text("ベンド追加", style = MaterialTheme.typography.labelSmall) }
+                        Spacer(Modifier.width(4.dp))
+                        TextButton(
+                            onClick = {
+                                val tick = beatsToTick(addBeatsText)
+                                val semi = addBendRange.toInt().coerceIn(0, 24)
+                                vm.addTrackCc(trackIndex, tick, 101, 0)
+                                vm.addTrackCc(trackIndex, tick, 100, 0)
+                                vm.addTrackCc(trackIndex, tick, 6, semi)
+                                vm.addTrackCc(trackIndex, tick, 38, 0)
+                                refresh++
+                            },
+                            contentPadding = PaddingValues(horizontal = 8.dp),
+                        ) { Text("RPN範囲追加", style = MaterialTheme.typography.labelSmall) }
+                    }
+                    // Add-form parameters for the selected add mode (simple: show both).
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            "CC${addCcNumber}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Slider(
+                            value = addCcNumber.toFloat(),
+                            onValueChange = { addCcNumber = it.toInt() },
+                            valueRange = 0f..127f,
+                            modifier = Modifier.weight(1f).height(24.dp),
+                        )
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            "CC値 ${addCcValue.toInt()}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Slider(
+                            value = addCcValue,
+                            onValueChange = { addCcValue = it },
+                            valueRange = 0f..127f,
+                            modifier = Modifier.weight(1f).height(24.dp),
+                        )
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            "ベンド ${addBendPercent.toInt()}%",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Slider(
+                            value = addBendPercent,
+                            onValueChange = { addBendPercent = it },
+                            valueRange = -100f..100f,
+                            modifier = Modifier.weight(1f).height(24.dp),
+                        )
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            "RPN範囲 ${addBendRange.toInt()}半音",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Slider(
+                            value = addBendRange,
+                            onValueChange = { addBendRange = it },
+                            valueRange = 0f..12f,
+                            modifier = Modifier.weight(1f).height(24.dp),
+                        )
+                    }
+                } else {
+                    // ---- edit sheet ----
+                    val ev = selected!!
+                    Text(
+                        when {
+                            ev.isCc -> ccLabel(ev.data[0], ev.data[1])
+                            ev.isPitchBend -> "ピッチベンド ${bendPercent(ev.pitchBendValue14)}%"
+                            ev.isProgramChange -> "プログラム ${ev.data[0]}"
+                            else -> "イベント"
+                        },
+                        style = MaterialTheme.typography.titleSmall,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = editBeatsText,
+                        onValueChange = { editBeatsText = it },
+                        label = { Text("位置（小節）") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    val range = when {
+                        ev.isPitchBend -> -100f..100f
+                        else -> 0f..127f
+                    }
+                    val valueLabel = when {
+                        ev.isPitchBend -> "ベンド ${editValue.toInt()}%"
+                        ev.isCc -> ccLabel(ev.data[0], editValue.toInt())
+                        else -> "値 ${editValue.toInt()}"
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            valueLabel,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Slider(
+                            value = editValue,
+                            onValueChange = { editValue = it },
+                            valueRange = range,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Row {
+                        TextButton(onClick = {
+                            vm.updateTrackEvent(
+                                trackIndex, ev,
+                                beatsToTick(editBeatsText), editValue,
+                            )
+                            selected = null
+                            refresh++
+                        }) { Text("保存") }
+                        Spacer(Modifier.width(8.dp))
+                        TextButton(onClick = { selected = null }) { Text("キャンセル") }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("閉じる") }
+        },
+    )
 }
 
 /**

@@ -55,8 +55,11 @@ object AudioExporter {
     private const val MAX_DURATION_SECONDS = 20.0 * 60
 
     private const val ORDER_SUSTAIN = 0
-    private const val ORDER_NOTE_OFF = 1
-    private const val ORDER_NOTE_ON = 2
+    private const val ORDER_BEND = 1
+    private const val ORDER_BEND_RANGE = 2
+    private const val ORDER_CC = 3
+    private const val ORDER_NOTE_OFF = 4
+    private const val ORDER_NOTE_ON = 5
 
     /**
      * Renders every note (plus sustain pedal events) of [Project.track] through
@@ -70,16 +73,36 @@ object AudioExporter {
         }
 
         // Same flattened events the realtime scheduler plays, ordered so that
-        // sustain changes come before note-offs, then note-ons on one tick.
+        // sustain and controller changes come before note-offs, then note-ons
+        // on one tick.
         val events = ArrayList<Ev>(project.track.notes.size * 2 + 8)
         for (n in project.track.notes) {
             if (n.durationTicks <= 0) continue
             events += Ev(n.startTick, ORDER_NOTE_ON, n.pitch, n.velocity, n.channel)
             events += Ev(n.endTick, ORDER_NOTE_OFF, n.pitch, 0, n.channel)
         }
+        val bendScanner = BendRangeScanner()
         for (e in project.track.rawEvents) {
-            if (e.isSustain && e.data.size >= 2) {
-                events += Ev(e.tick, ORDER_SUSTAIN, 0, e.data[1], 0)
+            if (e.isMeta || e.isSysex) continue
+            val status = e.status and 0xF0
+            when {
+                status == 0xB0 && e.data.size >= 2 -> {
+                    val cc = e.data[0]
+                    val value = e.data[1]
+                    when {
+                        cc == 64 -> events += Ev(e.tick, ORDER_SUSTAIN, 0, value, 0)
+                        else -> {
+                            val range = bendScanner.feed(cc, value)
+                            when {
+                                range != null -> events += Ev(e.tick, ORDER_BEND_RANGE, 0, range.toInt(), 0)
+                                cc == 6 || cc == 38 || cc in 98..101 -> Unit
+                                else -> events += Ev(e.tick, ORDER_CC, cc, value, e.channel)
+                            }
+                        }
+                    }
+                }
+                status == 0xE0 && e.data.size >= 2 ->
+                    events += Ev(e.tick, ORDER_BEND, e.data[0], e.data[1], e.channel)
             }
         }
         if (events.isEmpty()) return ShortArray(0)
@@ -108,6 +131,9 @@ object AudioExporter {
                     val e = events[index++]
                     when (e.order) {
                         ORDER_SUSTAIN -> synth.setSustain(e.velocity >= 64)
+                        ORDER_CC -> synth.sendCc(e.pitch, e.velocity)
+                        ORDER_BEND -> synth.setPitchBend((e.velocity shl 7) or e.pitch)
+                        ORDER_BEND_RANGE -> synth.setBendRangeCents(e.velocity.toFloat())
                         ORDER_NOTE_OFF -> synth.noteOff(e.pitch, e.channel)
                         else -> synth.noteOn(e.pitch, e.velocity, e.channel)
                     }

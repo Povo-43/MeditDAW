@@ -12,6 +12,17 @@ import kotlin.math.pow
 import kotlin.math.sqrt
 
 /**
+ * Per-synth (per-track) channel state shared with the voices: pitch bend in
+ * cents, CC7×CC11 gain and CC10 pan. Written on the audio thread from
+ * commands, read per render block by every voice so bends are heard live.
+ */
+internal class ChannelState {
+    @Volatile var bendCents: Double = 0.0
+    @Volatile var gain: Float = 1f
+    @Volatile var pan: Float = 0f
+}
+
+/**
  * A small polyphonic SoundFont synthesiser. All voice state lives on the audio
  * thread; the UI and the playback scheduler only enqueue commands, so editing
  * and scrolling never block on the synthesiser.
@@ -28,6 +39,9 @@ class PianoSynth(
         data class Volume(val value: Float) : Command
         data class AllNotesOff(val fast: Boolean) : Command
         data class Preset(val index: Int) : Command
+        data class Cc(val controller: Int, val value: Int) : Command
+        data class PitchBend(val value14: Int) : Command
+        data class BendRange(val cents: Float) : Command
         data object Shutdown : Command
     }
 
@@ -45,6 +59,12 @@ class PianoSynth(
     @Volatile private var masterVolume = BASE_MASTER_VOLUME
     @Volatile private var lastError: String? = null
     private val chunkFrames = 256
+
+    /** Per-track channel state driven by CC / pitch bend events. */
+    private val channelState = ChannelState()
+    private var ccVolume = 1f
+    private var ccExpression = 1f
+    private var bendRangeCents = 200f
 
     init {
         val minBuffer = AudioTrack.getMinBufferSize(
@@ -111,6 +131,24 @@ class PianoSynth(
         commands.add(Command.Preset(index))
     }
 
+    /** Routes a controller change (sustain, volume, pan, expression, …). */
+    fun sendCc(controller: Int, value: Int) {
+        if (!running) return
+        commands.add(Command.Cc(controller and 0x7F, value.coerceIn(0, 127)))
+    }
+
+    /** 14-bit pitch bend: 0 = full down, 8192 = centre, 16383 = full up. */
+    fun setPitchBend(value14: Int) {
+        if (!running) return
+        commands.add(Command.PitchBend(value14.coerceIn(0, 16383)))
+    }
+
+    /** Pitch bend range in cents (RPN 0). Affects subsequent bends. */
+    fun setBendRangeCents(cents: Float) {
+        if (!running) return
+        commands.add(Command.BendRange(cents))
+    }
+
     fun errorMessage(): String? = lastError
 
     override fun close() {
@@ -133,9 +171,21 @@ class PianoSynth(
                 drainCommands()
                 java.util.Arrays.fill(floatBuffer, 0f)
                 renderVoices(floatBuffer, chunkFrames)
+                // Channel-level CC pan (CC10) as equal-power balance; centre
+                // stays at unity gain.
+                val pan = channelState.pan
+                val gain = masterVolume * channelState.gain
+                if (abs(pan) > 0.001f) {
+                    val lBal = sqrt((1.0 - pan).coerceIn(0.0, 1.0)).toFloat()
+                    val rBal = sqrt((1.0 + pan).coerceIn(0.0, 1.0)).toFloat()
+                    for (f in 0 until chunkFrames) {
+                        floatBuffer[f * 2] *= lBal
+                        floatBuffer[f * 2 + 1] *= rBal
+                    }
+                }
                 // Soft saturation keeps dense chords from hard clipping.
                 for (i in floatBuffer.indices) {
-                    var x = floatBuffer[i] * masterVolume
+                    var x = floatBuffer[i] * gain
                     if (x > -3f && x < 3f) {
                         val x2 = x * x
                         x = x * (27f + x2) / (27f + 9f * x2)
@@ -172,17 +222,7 @@ class PianoSynth(
             when (cmd) {
                 is Command.NoteOn -> startNote(cmd.pitch, cmd.velocity, cmd.channel)
                 is Command.NoteOff -> stopNote(cmd.pitch, cmd.channel)
-                is Command.Sustain -> {
-                    sustainOn = cmd.on
-                    if (!cmd.on) {
-                        for (v in voices) {
-                            if (v.heldBySustain) {
-                                v.heldBySustain = false
-                                v.release()
-                            }
-                        }
-                    }
-                }
+                is Command.Sustain -> applySustain(cmd.on)
                 is Command.Volume -> {
                     userGain = cmd.value
                     masterVolume = BASE_MASTER_VOLUME * userGain
@@ -199,9 +239,67 @@ class PianoSynth(
                     // preset, so the next note-on plays the new instrument.
                     soundFont.selectPreset(cmd.index)
                 }
+                is Command.Cc -> applyCc(cmd.controller, cmd.value)
+                is Command.PitchBend -> {
+                    channelState.bendCents = ((cmd.value14 - 8192) / 8192.0) * bendRangeCents
+                }
+                is Command.BendRange -> {
+                    bendRangeCents = cmd.cents.coerceIn(0f, 2400f)
+                    // Re-apply the current wheel position under the new range.
+                    // (The engine re-sends bends after a range change.)
+                }
                 Command.Shutdown -> {
                     running = false
                     return
+                }
+            }
+        }
+    }
+
+    private fun applySustain(on: Boolean) {
+        sustainOn = on
+        if (!on) {
+            for (v in voices) {
+                if (v.heldBySustain) {
+                    v.heldBySustain = false
+                    v.release()
+                }
+            }
+        }
+    }
+
+    /** The controllers the engine actually renders; everything else is stored but ignored. */
+    private fun applyCc(controller: Int, value: Int) {
+        when (controller) {
+            64 -> applySustain(value >= 64)
+            7 -> {
+                ccVolume = (value / 127.0).pow(2.0).toFloat().coerceIn(0f, 1f)
+                channelState.gain = ccVolume * ccExpression
+            }
+            11 -> {
+                ccExpression = (value / 127.0).pow(1.5).toFloat().coerceIn(0f, 1f)
+                channelState.gain = ccVolume * ccExpression
+            }
+            10 -> channelState.pan = ((value - 64) / 64.0).coerceIn(-1.0, 1.0).toFloat()
+            120 -> { // All sound off: immediate silence.
+                sustainOn = false
+                for (v in voices) {
+                    v.heldBySustain = false
+                    v.release(fast = true)
+                }
+            }
+            121 -> { // Reset all controllers.
+                ccVolume = 1f
+                ccExpression = 1f
+                channelState.gain = 1f
+                channelState.pan = 0f
+                channelState.bendCents = 0.0
+                applySustain(false)
+            }
+            123 -> { // All notes off.
+                for (v in voices) {
+                    v.heldBySustain = false
+                    v.release()
                 }
             }
         }
@@ -220,7 +318,7 @@ class PianoSynth(
             if (pitch < region.keyLow || pitch > region.keyHigh) continue
             if (velocity < region.velocityLow || velocity > region.velocityHigh) continue
             if (started >= 4) break
-            val voice = Voice(region, pitch, velocity, channel, outputSampleRate, soundFont.sampleData)
+            val voice = Voice(region, pitch, velocity, channel, outputSampleRate, soundFont.sampleData, channelState)
             if (voice.done) continue
             voices += voice
             started++
@@ -260,6 +358,7 @@ class PianoSynth(
         val channel: Int,
         private val outputRate: Int,
         private val sampleData: ShortArray,
+        private val channelState: ChannelState,
     ) {
         private val inverseRate = 1f / outputRate
         var done = false
@@ -330,6 +429,11 @@ class PianoSynth(
 
         fun render(buffer: FloatArray, frames: Int) {
             val soundFontSamples = sampleData
+            // Live pitch bend: read once per block so a moving wheel bends
+            // sounding notes; one pow per voice per block is negligible.
+            val bendFactor = 2.0.pow(channelState.bendCents / 1200.0)
+            val pitchFactor = pitchRatio * bendFactor
+            val chGain = channelState.gain
             var i = 0
             while (i < frames && !done) {
                 // ---- envelope ----
@@ -400,11 +504,11 @@ class PianoSynth(
                 val s0 = if (idx in soundFontSamples.indices) soundFontSamples[idx] / 32768f else 0f
                 val s1 = if (idx + 1 in soundFontSamples.indices) soundFontSamples[idx + 1] / 32768f else s0
                 val sample = s0 + (s1 - s0) * frac
-                position = pos + pitchRatio
+                position = pos + pitchFactor
 
                 val gain = envLevel
-                buffer[i * 2] += sample * leftGain * gain
-                buffer[i * 2 + 1] += sample * rightGain * gain
+                buffer[i * 2] += sample * leftGain * chGain * gain
+                buffer[i * 2 + 1] += sample * rightGain * chGain * gain
                 i++
             }
         }
@@ -426,6 +530,10 @@ class PianoSynth(
         private val voices = ArrayList<Voice>(64)
         private var sustainOn = false
         private val masterVolume = BASE_MASTER_VOLUME * userGain
+        private val channelState = ChannelState()
+        private var ccVolume = 1f
+        private var ccExpression = 1f
+        private var bendRangeCents = 200f
 
         fun noteOn(pitch: Int, velocity: Int, channel: Int = 0) {
             startNote(pitch.coerceIn(0, 127), velocity.coerceIn(1, 127), channel and 0x0F)
@@ -447,6 +555,40 @@ class PianoSynth(
             }
         }
 
+        /** Same CC semantics as the realtime synth. */
+        fun sendCc(controller: Int, value: Int) {
+            when (controller) {
+                64 -> setSustain(value >= 64)
+                7 -> {
+                    ccVolume = (value / 127.0).pow(2.0).toFloat().coerceIn(0f, 1f)
+                    channelState.gain = ccVolume * ccExpression
+                }
+                11 -> {
+                    ccExpression = (value / 127.0).pow(1.5).toFloat().coerceIn(0f, 1f)
+                    channelState.gain = ccVolume * ccExpression
+                }
+                10 -> channelState.pan = ((value - 64) / 64.0).coerceIn(-1.0, 1.0).toFloat()
+                120 -> allNotesOff(fast = true)
+                121 -> {
+                    ccVolume = 1f
+                    ccExpression = 1f
+                    channelState.gain = 1f
+                    channelState.pan = 0f
+                    channelState.bendCents = 0.0
+                    setSustain(false)
+                }
+                123 -> allNotesOff()
+            }
+        }
+
+        fun setPitchBend(value14: Int) {
+            channelState.bendCents = ((value14.coerceIn(0, 16383) - 8192) / 8192.0) * bendRangeCents
+        }
+
+        fun setBendRangeCents(cents: Float) {
+            bendRangeCents = cents.coerceIn(0f, 2400f)
+        }
+
         fun allNotesOff(fast: Boolean = false) {
             sustainOn = false
             for (v in voices) {
@@ -463,9 +605,18 @@ class PianoSynth(
         fun renderPcm16(out: ShortArray, outOffset: Int, frames: Int) {
             val floatBuffer = FloatArray(frames * 2)
             renderVoices(floatBuffer, frames)
+            val pan = channelState.pan
+            val chGain = channelState.gain
+            val applyPan = abs(pan) > 0.001f
             for (i in 0 until frames) {
-                out[outOffset + i * 2] = toPcm16(floatBuffer[i * 2])
-                out[outOffset + i * 2 + 1] = toPcm16(floatBuffer[i * 2 + 1])
+                var l = floatBuffer[i * 2]
+                var r = floatBuffer[i * 2 + 1]
+                if (applyPan) {
+                    l *= sqrt((1.0 - pan).coerceIn(0.0, 1.0)).toFloat()
+                    r *= sqrt((1.0 + pan).coerceIn(0.0, 1.0)).toFloat()
+                }
+                out[outOffset + i * 2] = toPcm16(l * chGain)
+                out[outOffset + i * 2 + 1] = toPcm16(r * chGain)
             }
         }
 
@@ -494,7 +645,7 @@ class PianoSynth(
                 if (pitch < region.keyLow || pitch > region.keyHigh) continue
                 if (velocity < region.velocityLow || velocity > region.velocityHigh) continue
                 if (started >= 4) break
-                val voice = Voice(region, pitch, velocity, channel, outputSampleRate, soundFont.sampleData)
+                val voice = Voice(region, pitch, velocity, channel, outputSampleRate, soundFont.sampleData, channelState)
                 if (voice.done) continue
                 voices += voice
                 started++

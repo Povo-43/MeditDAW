@@ -1203,10 +1203,14 @@ fun RenameDialog(
     initial: String,
     onDismiss: () -> Unit,
     onApply: (String) -> Unit,
+    title: String = "曲名",
+    label: String = "タイトル",
+    hint: String = "曲名は画面表示と書き出すファイル名の初期値に使われます。",
+    maxLength: Int = 80,
 ) {
     var text by remember { mutableStateOf(initial) }
     AppDialog(
-        title = "曲名",
+        title = title,
         icon = Icons.Rounded.DriveFileRenameOutline,
         onDismiss = onDismiss,
         actions = {
@@ -1215,20 +1219,20 @@ fun RenameDialog(
             DialogPrimaryButton(
                 text = "変更",
                 icon = Icons.Rounded.Check,
-                onClick = { onApply(text.trim().ifBlank { "無題" }) },
+                onClick = { onApply(text.trim().ifBlank { initial.ifBlank { "無題" } }) },
             )
         },
     ) {
         OutlinedTextField(
             value = text,
-            onValueChange = { text = it.take(80) },
-            label = { Text("タイトル") },
+            onValueChange = { text = it.take(maxLength) },
+            label = { Text(label) },
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
         )
         Spacer(Modifier.height(8.dp))
         Text(
-            "曲名は画面表示と書き出すファイル名の初期値に使われます。",
+            hint,
             style = MaterialTheme.typography.labelSmall,
             color = Mist,
         )

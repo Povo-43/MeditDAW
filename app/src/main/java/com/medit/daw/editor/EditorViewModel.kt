@@ -32,6 +32,7 @@ import com.medit.daw.model.GridUnit
 import com.medit.daw.model.MidiMeta
 import com.medit.daw.model.Note
 import com.medit.daw.model.Project
+import com.medit.daw.model.RawEvent
 import com.medit.daw.model.TimeSignature
 import com.medit.daw.model.TimeSignaturePoint
 import com.medit.daw.model.Track
@@ -1002,6 +1003,102 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     fun toggleTrackPanel() {
         _trackPanelVisible.value = !_trackPanelVisible.value
     }
+
+    /** Renames the given track and persists the change. */
+    fun renameTrack(index: Int, name: String) {
+        val p = _project.value ?: return
+        if (index !in p.tracks.indices) return
+        val trimmed = name.trim().take(40).ifBlank { p.tracks[index].name }
+        if (trimmed == p.tracks[index].name) return
+        val newTracks = p.tracks.toMutableList().also {
+            it[index] = p.tracks[index].copy(name = trimmed)
+        }
+        val updated = p.copy(tracks = newTracks)
+        _project.value = updated
+        playback.setProject(updated)
+        postMessage("トラック名を「$trimmed」に変更しました")
+    }
+
+    // -----------------------------------------------------------------
+    // MIDI events (CC / pitch bend / program) editing
+    // -----------------------------------------------------------------
+
+    /** Editable controller events of the track (CC, bend, program), by tick. */
+    fun trackControlEvents(trackIndex: Int): List<RawEvent> {
+        val p = _project.value ?: return emptyList()
+        val t = p.tracks.getOrNull(trackIndex) ?: return emptyList()
+        return t.rawEvents.filter { it.isEditableController }.sortedBy { it.tick }
+    }
+
+    /** Adds a CC event, keeping rawEvents sorted by tick. */
+    fun addTrackCc(trackIndex: Int, tick: Int, controller: Int, value: Int) {
+        val p = _project.value ?: return
+        if (trackIndex !in p.tracks.indices) return
+        insertTrackEvent(trackIndex, RawEvent(tick.coerceAtLeast(0), 0xB0, intArrayOf(controller and 0x7F, value.coerceIn(0, 127))))
+        postMessage("CC$controller を追加しました")
+    }
+
+    /** Adds a pitch bend event; [percent] is −100 (down) … +100 (up). */
+    fun addTrackPitchBend(trackIndex: Int, tick: Int, percent: Float) {
+        val p = _project.value ?: return
+        if (trackIndex !in p.tracks.indices) return
+        val value14 = percentToBend14(percent)
+        insertTrackEvent(trackIndex, RawEvent(tick.coerceAtLeast(0), 0xE0, intArrayOf(value14 and 0x7F, (value14 shr 7) and 0x7F)))
+        postMessage("ピッチベンドを追加しました")
+    }
+
+    /** Updates an existing event's tick and value (CC value or bend percent). */
+    fun updateTrackEvent(trackIndex: Int, event: RawEvent, newTick: Int, newPercentOrValue: Float) {
+        val p = _project.value ?: return
+        val t = p.tracks.getOrNull(trackIndex) ?: return
+        val idx = t.rawEvents.indexOf(event)
+        if (idx < 0) return
+        val replacement = when {
+            event.isPitchBend -> {
+                val v14 = percentToBend14(newPercentOrValue)
+                RawEvent(newTick, event.status, intArrayOf(v14 and 0x7F, (v14 shr 7) and 0x7F))
+            }
+            event.isCc -> RawEvent(newTick, event.status, intArrayOf(event.data[0], newPercentOrValue.toInt().coerceIn(0, 127)))
+            event.isProgramChange -> RawEvent(newTick, event.status, intArrayOf(newPercentOrValue.toInt().coerceIn(0, 127)))
+            else -> return
+        }
+        val newEvents = t.rawEvents.toMutableList().also { it[idx] = replacement }.sortedBy { it.tick }
+        commitTrackEvents(trackIndex, newEvents)
+        postMessage("イベントを更新しました")
+    }
+
+    /** Removes an event from the track. */
+    fun removeTrackEvent(trackIndex: Int, event: RawEvent) {
+        val p = _project.value ?: return
+        val t = p.tracks.getOrNull(trackIndex) ?: return
+        val newEvents = t.rawEvents.toMutableList().also { it.remove(event) }
+        commitTrackEvents(trackIndex, newEvents)
+        postMessage("イベントを削除しました")
+    }
+
+    private fun insertTrackEvent(trackIndex: Int, event: RawEvent) {
+        val p = _project.value
+        val t = p?.tracks?.getOrNull(trackIndex) ?: return
+        val newEvents = (t.rawEvents + event).sortedBy { it.tick }
+        commitTrackEvents(trackIndex, newEvents)
+    }
+
+    private fun commitTrackEvents(trackIndex: Int, events: List<RawEvent>) {
+        val p = _project.value ?: return
+        if (trackIndex !in p.tracks.indices) return
+        val newTracks = p.tracks.toMutableList().also {
+            it[trackIndex] = p.tracks[trackIndex].copy(rawEvents = events)
+        }
+        val updated = p.copy(tracks = newTracks)
+        _project.value = updated
+        playback.setProject(updated)
+    }
+
+    private fun percentToBend14(percent: Float): Int =
+        (8192 + (percent.coerceIn(-100f, 100f) / 100.0 * 8191)).toInt().coerceIn(0, 16383)
+
+    /** Project PPQ for tick ↔ beat conversions in dialogs. */
+    fun projectPpq(): Int = _project.value?.ppq ?: 480
 
     /** Opens the per-track audio export flow (SAF picker handled by the host). */
     fun requestTrackExport(trackIndex: Int, format: AudioExportFormat) {

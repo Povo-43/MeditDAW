@@ -67,6 +67,26 @@ class RawEvent(
         get() = !isMeta && !isSysex && (status and 0xF0) == 0xB0 &&
             data.size >= 2 && data[0] == 64
 
+    /** Any continuous controller (0xB0) with a controller + value pair. */
+    val isCc: Boolean
+        get() = !isMeta && !isSysex && (status and 0xF0) == 0xB0 && data.size >= 2
+
+    /** Pitch bend (0xE0) with an LSB / MSB pair. */
+    val isPitchBend: Boolean
+        get() = !isMeta && !isSysex && (status and 0xF0) == 0xE0 && data.size >= 2
+
+    /** Program change (0xC0). */
+    val isProgramChange: Boolean
+        get() = !isMeta && !isSysex && (status and 0xF0) == 0xC0 && data.size >= 1
+
+    /** Events the MIDI event editor can display and modify. */
+    val isEditableController: Boolean
+        get() = isCc || isPitchBend || isProgramChange
+
+    /** 14-bit pitch bend value (0 = down, 8192 = centre, 16383 = up). */
+    val pitchBendValue14: Int
+        get() = if (isPitchBend) ((data[1] and 0x7F) shl 7) or (data[0] and 0x7F) else 8192
+
     val channel: Int get() = if (isMeta || isSysex) -1 else status and 0x0F
 
     val note: Int get() = if (data.isNotEmpty()) data[0] else 0

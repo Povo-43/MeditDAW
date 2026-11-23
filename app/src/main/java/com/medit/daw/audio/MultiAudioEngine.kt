@@ -231,6 +231,21 @@ class MultiAudioEngine(private val context: Context) {
         applyPreset(trackIndex, presetIndex)
     }
 
+    /** Routes a controller change to the track's synth. */
+    fun sendCc(trackIndex: Int, controller: Int, value: Int) {
+        synths[trackIndex]?.sendCc(controller, value)
+    }
+
+    /** 14-bit pitch bend for the track's synth. */
+    fun setPitchBend(trackIndex: Int, value14: Int) {
+        synths[trackIndex]?.setPitchBend(value14)
+    }
+
+    /** Pitch bend range (RPN 0) in cents for the track's synth. */
+    fun setBendRangeCents(trackIndex: Int, cents: Float) {
+        synths[trackIndex]?.setBendRangeCents(cents)
+    }
+
     fun noteOn(trackIndex: Int, pitch: Int, velocity: Int, channel: Int = 0) {
         synths[trackIndex]?.noteOn(pitch, velocity, channel)
     }
