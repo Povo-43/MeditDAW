@@ -10,9 +10,10 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.medit.daw.audio.AudioExporter
 import com.medit.daw.audio.AudioExportFormat
-import com.medit.daw.audio.AudioStatus
+import com.medit.daw.audio.LibraryFont
 import com.medit.daw.audio.MultiAudioEngine
 import com.medit.daw.audio.PlaybackEngine
+import com.medit.daw.audio.Sf2Source
 import com.medit.daw.audio.SoundFontLoader
 import com.medit.daw.audio.SoundFont
 import com.medit.daw.audio.SoundFontPreset
@@ -379,15 +380,13 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         )
 
     init {
+        // Give track 0 a voice immediately; per-track fonts are restored from
+        // each project when its tab activates (restoreTrackFonts).
+        audio.loadForTrack(0, Sf2Source.Bundled)
+        // Register a legacy single-file font (pre-library versions stored one
+        // global custom.sf2) so it stays available in the library.
         viewModelScope.launch {
-            val stored = withContext(Dispatchers.IO) { loadStoredSoundFont() }
-            if (stored != null) {
-                _soundFontCustom.value = true
-                _soundFontFileName.value = stored.second
-                audio.loadExternalForTrack(0, stored.first)
-            } else {
-                audio.loadBundledForTrack(0)
-            }
+            withContext(Dispatchers.IO) { registerLegacyStoredFont() }
         }
         midiInput.start()
         viewModelScope.launch {
@@ -1055,18 +1054,120 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         return audio.soundFontFor(trackIndex)?.presets ?: emptyList()
     }
 
-    /** All SoundFonts currently loaded app-wide (global library). */
-    fun loadedSoundFonts(): List<SoundFont> = audio.loadedFonts()
+    /** SoundFonts of the app-wide global library (parsed banks, shared). */
+    fun libraryFonts(): List<LibraryFont> = audio.libraryFonts()
 
-    /** Loads a SoundFont file into the global library and assigns it to the given track. */
-    fun loadSoundFontToLibrary(uri: Uri, trackIndex: Int) {
-        loadExternalSoundFont(uri)
+    /** The source assigned to the given track, null when not loaded yet. */
+    fun trackFontSource(trackIndex: Int): Sf2Source? = audio.trackSource(trackIndex)
+
+    /**
+     * Assigns a library source (bundled piano or a library file) to a track
+     * and persists the choice in the project.
+     */
+    fun assignTrackFont(trackIndex: Int, source: Sf2Source) {
+        val p = _project.value ?: return
+        if (trackIndex !in p.tracks.indices) return
+        val track = p.tracks[trackIndex]
+        if (source is Sf2Source.File && !java.io.File(source.path).isFile) {
+            postMessage("SoundFontファイルが見つかりません")
+            return
+        }
+        val newPath = when (source) {
+            Sf2Source.Bundled -> ""
+            is Sf2Source.File -> source.path
+        }
+        val newTracks = p.tracks.toMutableList().also {
+            it[trackIndex] = track.copy(soundFontPath = newPath)
+        }
+        val updated = p.copy(tracks = newTracks)
+        _project.value = updated
+        playback.setProject(updated)
+        audio.loadForTrack(trackIndex, source, track.presetIndex)
+        if (trackIndex == activeTrackIndex()) syncSoundFontUiState()
+        postMessage("${track.name} の音源を「${Sf2Source.displayName(source)}」に変更しました")
     }
 
-    /** Switches the SoundFont preset (instrument) of the given track. */
+    /** Removes a file font from the global library; its tracks fall back to bundled. */
+    fun removeLibraryFont(key: String) {
+        if (key == Sf2Source.BUNDLED_KEY) return
+        val affected = audio.removeFont(key)
+        val p = _project.value ?: return
+        if (affected.isEmpty()) {
+            postMessage("ライブラリから削除しました")
+            return
+        }
+        val newTracks = p.tracks.mapIndexed { i, t ->
+            if (i in affected) t.copy(soundFontPath = "") else t
+        }
+        val updated = p.copy(tracks = newTracks)
+        _project.value = updated
+        playback.setProject(updated)
+        syncSoundFontUiState()
+        postMessage("ライブラリから削除しました（使用していたトラックは内蔵ピアノに戻りました）")
+    }
+
+    /**
+     * Switches the SoundFont preset (instrument) of the given track. The
+     * choice is stored on the track so it survives restarts and re-applies
+     * whenever the track's font loads.
+     */
     fun setTrackPreset(trackIndex: Int, presetIndex: Int) {
+        val p = _project.value ?: return
+        if (trackIndex !in p.tracks.indices) return
+        val track = p.tracks[trackIndex]
+        val newTracks = p.tracks.toMutableList().also {
+            it[trackIndex] = track.copy(presetIndex = presetIndex)
+        }
+        val updated = p.copy(tracks = newTracks)
+        _project.value = updated
+        playback.setProject(updated)
         audio.selectPreset(trackIndex, presetIndex)
-        postMessage("プリセットを${presetIndex + 1}番に切り替えました")
+        val name = audio.soundFontFor(trackIndex)?.presets?.getOrNull(presetIndex)?.name
+        postMessage(
+            if (name != null) "プリセットを「$name」に切り替えました"
+            else "プリセットを${presetIndex + 1}番に切り替えました"
+        )
+    }
+
+    /**
+     * Restores every track's assigned font and preset when a project becomes
+     * active. Banks are shared in the engine's library, so fonts already in
+     * memory are not re-parsed. Files that vanished fall back to the bundled
+     * piano and the stale path is cleared.
+     */
+    private fun restoreTrackFonts(p: Project) {
+        viewModelScope.launch {
+            p.tracks.forEachIndexed { index, track ->
+                val source = when {
+                    track.soundFontPath.isBlank() -> Sf2Source.Bundled
+                    java.io.File(track.soundFontPath).isFile -> Sf2Source.File(track.soundFontPath)
+                    else -> {
+                        // Stored file is gone (uninstalled cleanup etc.).
+                        val fixed = p.tracks
+                            .toMutableList()
+                            .also { it[index] = track.copy(soundFontPath = "") }
+                        _project.value = p.copy(tracks = fixed)
+                        Sf2Source.Bundled
+                    }
+                }
+                audio.loadForTrack(index, source, track.presetIndex)
+            }
+            syncSoundFontUiState()
+        }
+    }
+
+    /** Mirrors the active track's font into the settings dialog state. */
+    private fun syncSoundFontUiState() {
+        when (val source = audio.trackSource(activeTrackIndex())) {
+            is Sf2Source.File -> {
+                _soundFontCustom.value = true
+                _soundFontFileName.value = java.io.File(source.path).name
+            }
+            else -> {
+                _soundFontCustom.value = false
+                _soundFontFileName.value = null
+            }
+        }
     }
 
     fun dismissTrackPicker() {
@@ -1200,6 +1301,8 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         playback.setProject(tab.project)
         autosaveEnabled = true
         _autosave.value = AutosaveState.Idle
+        // Re-arm each track's assigned SoundFont and preset for this project.
+        restoreTrackFonts(tab.project)
     }
 
     // ---------------------------------------------------------------------
@@ -1387,11 +1490,15 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) {
                 runCatching {
-                    val ti = activeTrackIndex()
-                    val font = audio.soundFontFor(ti)
-                        ?: throw IOException("音源が準備できていません")
-                    // Same gain as playback so exports match what was heard.
-                    val pcm = AudioExporter.renderPcm(p, font, audio.currentUserVolume())
+                    // Each track renders through its own SoundFont; muted
+                    // tracks are skipped and solo is honored, matching
+                    // realtime playback.
+                    val fallback = audio.soundFontFor(activeTrackIndex())
+                    val pcm = AudioExporter.renderPcmMixed(
+                        p,
+                        { i -> if (i in p.tracks.indices) audio.soundFontFor(i) else fallback },
+                        audio.currentUserVolume(),
+                    )
                     if (pcm.isEmpty()) throw IOException("書き出す音がありません")
                     when (format) {
                         AudioExportFormat.MP3 ->
@@ -1413,7 +1520,12 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    fun loadExternalSoundFont(uri: Uri) {
+    /**
+     * Imports an SF2 file into the global library (stored under the app's
+     * private `soundfonts/` directory with a unique name, so importing a new
+     * file never overwrites an older one) and assigns it to [trackIndex].
+     */
+    fun loadExternalSoundFont(uri: Uri, trackIndex: Int = activeTrackIndex()) {
         if (_busy.value.soundFont) return
         _busy.value = _busy.value.copy(soundFont = true)
         viewModelScope.launch {
@@ -1425,16 +1537,31 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                         ?: throw IOException("ファイルを開けません")
                     // Streamed to disk and validated there: the bank does not
                     // have to fit in heap just to be installed.
-                    stream.use { storeSoundFont(it, displayName) }
-                    displayName
+                    val file = stream.use { storeSoundFont(it, displayName) }
+                    file to displayName
                 }
             }
             result.fold(
-                onSuccess = { name ->
-                    _soundFontCustom.value = true
-                    _soundFontFileName.value = name
-                    audio.loadExternalForTrack(activeTrackIndex(), soundFontFile())
-                    postMessage("SoundFont「$name」を読み込み中です")
+                onSuccess = { (file, displayName) ->
+                    val source = Sf2Source.File(file.absolutePath)
+                    val p = _project.value
+                    if (p != null && trackIndex in p.tracks.indices) {
+                        val track = p.tracks[trackIndex]
+                        val newTracks = p.tracks.toMutableList().also {
+                            it[trackIndex] = track.copy(soundFontPath = file.absolutePath)
+                        }
+                        val updated = p.copy(tracks = newTracks)
+                        _project.value = updated
+                        playback.setProject(updated)
+                        audio.loadForTrack(trackIndex, source, track.presetIndex)
+                    } else {
+                        audio.loadForTrack(trackIndex, source)
+                    }
+                    if (trackIndex == activeTrackIndex()) {
+                        _soundFontCustom.value = true
+                        _soundFontFileName.value = file.name
+                    }
+                    postMessage("SoundFont「$displayName」をライブラリに追加しました")
                 },
                 onFailure = { t ->
                     postMessage("SoundFontを読み込めません: ${t.message ?: t.javaClass.simpleName}")
@@ -1444,17 +1571,23 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    /** Re-loads the bundled piano for the active track (clears its library file). */
     fun reloadBundledSoundFont() {
-        viewModelScope.launch {
-            withContext(Dispatchers.IO) { soundFontDir().deleteRecursively() }
-            _soundFontCustom.value = false
-            _soundFontFileName.value = null
-            // The bundled piano always plays at its neutral gain; the saved
-            // slider value is kept for the next external SoundFont.
-            audio.setVolume(1f)
-            audio.loadBundledForTrack(activeTrackIndex())
-            postMessage("内蔵ピアノ音源に戻しました")
+        val index = activeTrackIndex()
+        val track = _project.value?.tracks?.getOrNull(index) ?: return
+        val newTracks = _project.value!!.tracks.toMutableList().also {
+            it[index] = track.copy(soundFontPath = "")
         }
+        val updated = _project.value!!.copy(tracks = newTracks)
+        _project.value = updated
+        playback.setProject(updated)
+        // The bundled piano always plays at its neutral gain; the saved
+        // slider value is kept for the next external SoundFont.
+        audio.setVolume(1f)
+        audio.loadForTrack(index, Sf2Source.Bundled, track.presetIndex)
+        _soundFontCustom.value = false
+        _soundFontFileName.value = null
+        postMessage("内蔵ピアノ音源に戻しました")
     }
 
     // ---------------------------------------------------------------------
@@ -1950,19 +2083,19 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
 
     private fun soundFontFile(): File = File(soundFontDir(), "custom.sf2")
 
-    private fun soundFontNameFile(): File = File(soundFontDir(), "custom.name")
-
     /**
-     * Streams the chosen SF2 into app-private storage so it survives restarts.
-     * The original file on the device is never touched.
+     * Streams the chosen SF2 into app-private storage so it survives
+     * restarts. The original file on the device is never touched.
      *
-     * The copy is written to `custom.tmp`, parsed there and only then swapped
-     * in, so a broken or oversized bank leaves the working font untouched and
-     * a large file never has to fit in memory twice.
+     * Each import gets a unique file name (timestamp + display name), so a
+     * new import adds to the global library instead of overwriting the
+     * previous font. The copy is written to a temp file, parsed there and
+     * only then swapped in, so a broken or oversized bank never lands in the
+     * library and a large file never has to fit in memory twice.
      */
     private fun storeSoundFont(input: InputStream, displayName: String): File {
         val dir = soundFontDir()
-        val temp = File(dir, "custom.tmp")
+        val temp = File(dir, "import.tmp")
         try {
             temp.outputStream().use { out ->
                 val buffer = ByteArray(256 * 1024)
@@ -1978,38 +2111,37 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                 }
             }
             if (temp.length() == 0L) throw IOException("ファイルが空です")
-            // Validate the copy before replacing a working font.
-            SoundFontLoader.load(temp)
+            // Validate the copy before adding it to the library.
+            SoundFontLoader.loadBank(temp)
         } catch (t: Throwable) {
             temp.delete()
             throw t
         }
-        val target = File(dir, "custom.sf2")
-        if (target.exists() && !target.delete()) {
-            temp.delete()
-            throw IOException("既存のSoundFontを置き換えられません")
-        }
+        val stamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.JAPAN).format(Date())
+        val base = displayName.substringBeforeLast('.')
+            .replace(Regex("[\\\\/:*?\"<>|]"), "_")
+            .trim()
+            .ifBlank { "SoundFont" }
+            .take(60)
+        val target = File(dir, "import_${stamp}_$base.sf2")
         if (!temp.renameTo(target)) {
             temp.copyTo(target, overwrite = true)
             temp.delete()
         }
-        File(dir, "custom.name").writeText(displayName)
         return target
     }
 
-    /** Returns the stored font only when it still parses, otherwise cleans it up. */
-    private fun loadStoredSoundFont(): Pair<File, String>? {
+    /**
+     * Legacy cleanup: versions before the global library kept one global
+     * `custom.sf2`. The file stays usable (it can be assigned from the
+     * library picker by importing again); a broken copy is removed.
+     */
+    private fun registerLegacyStoredFont() {
         val file = soundFontFile()
-        if (!file.isFile || file.length() == 0L) return null
-        if (runCatching { SoundFontLoader.load(file) }.isFailure) {
-            soundFontDir().deleteRecursively()
-            return null
+        if (!file.isFile || file.length() == 0L) return
+        if (runCatching { SoundFontLoader.loadBank(file) }.isFailure) {
+            soundFontDir().listFiles()?.forEach { if (it.name != "import.tmp") it.delete() }
         }
-        val name = runCatching { soundFontNameFile().readText().trim() }
-            .getOrNull()
-            ?.takeIf { it.isNotBlank() }
-            ?: "SoundFont.sf2"
-        return file to name
     }
 
     fun autosaveLabel(): String = when (val s = _autosave.value) {

@@ -90,7 +90,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.medit.daw.BuildConfig
-import com.medit.daw.audio.AudioStatus
+import com.medit.daw.audio.TrackAudioStatus
 import com.medit.daw.editor.EditorUiState
 import com.medit.daw.editor.EditorViewModel
 import com.medit.daw.model.GridUnit
@@ -866,8 +866,11 @@ private fun AudioStatusCard(
                     modifier = Modifier.size(20.dp),
                 )
                 Spacer(Modifier.size(8.dp))
-                when (val audio = ui.audio) {
-                    is AudioStatus.Loading -> {
+                // The active track's engine status (multi-track: one synth per
+                // track, each with its own SoundFont and preset).
+                val audio = ui.audio[vm.activeTrackIndex()] ?: TrackAudioStatus.Loading
+                when (audio) {
+                    is TrackAudioStatus.Loading -> {
                         CircularProgressIndicator(
                             modifier = Modifier.size(16.dp),
                             strokeWidth = 2.dp,
@@ -876,7 +879,7 @@ private fun AudioStatusCard(
                         Spacer(Modifier.size(8.dp))
                         Text("音源を読み込み中…", style = MaterialTheme.typography.bodyMedium)
                     }
-                    is AudioStatus.Ready -> {
+                    is TrackAudioStatus.Ready -> {
                         Column(Modifier.weight(1f)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
@@ -910,7 +913,7 @@ private fun AudioStatusCard(
                             }
                         }
                     }
-                    is AudioStatus.Failed -> {
+                    is TrackAudioStatus.Failed -> {
                         Text(
                             audio.message,
                             style = MaterialTheme.typography.bodyMedium,

@@ -52,13 +52,6 @@ data class SfRegion(
  * one has no playable zones. Modulators, filters and LFOs are not applied;
  * they are ignored rather than silently mangled.
  */
-/**
- * A parsed SoundFont 2.04 instrument bank with all of its presets.
- *
- * [regions] holds the playable regions of the currently selected preset and
- * can be switched with [selectPreset]. [sampleData] is shared by every
- * preset of the bank so switching presets never re-decodes samples.
- */
 
 object SoundFontLoader {
 
@@ -126,16 +119,16 @@ object SoundFontLoader {
         val hydra = HashMap<String, ByteArray>()
     }
 
-    fun load(bytes: ByteArray): SoundFont = load(ByteArraySource(bytes))
+    fun loadBank(bytes: ByteArray): SoundFontBank = load(ByteArraySource(bytes))
 
     /**
      * Streams the bank from disk: only the small `pdta`/`INFO` chunks are held
      * in memory next to the decoded samples, so a large file no longer costs
      * its own size in heap while it is being parsed.
      */
-    fun load(file: File): SoundFont = RandomAccessFile(file, "r").use { load(FileSource(it)) }
+    fun loadBank(file: File): SoundFontBank = RandomAccessFile(file, "r").use { load(FileSource(it)) }
 
-    private fun load(source: Source): SoundFont {
+    private fun load(source: Source): SoundFontBank {
         if (source.size < 12) throw SoundFontException("SoundFontファイルが短すぎます")
         if (source.size > ABSOLUTE_MAX_FILE_BYTES) throw SoundFontException("SoundFontファイルが大きすぎます")
 
@@ -224,7 +217,6 @@ object SoundFontLoader {
         // remaining preset in file order so odd banks still end up playable.
         val preferredIndex = presets.indexOfFirst { it.bank == 0 && it.program == 0 }
             .takeIf { it >= 0 } ?: 0
-        val presetOrder = listOf(preferredIndex) + presets.indices.filter { it != preferredIndex }
 
         fun pbagGen(index: Int): Pair<Int, Int> {
             val o = index * 4
@@ -393,29 +385,30 @@ object SoundFontLoader {
             }
         }
 
-        // Every preset is tried in order; stereo pairs are first-class now, so
-        // a bank no longer needs a mono fallback pass to be playable.
+        // Every preset is decoded once, in index order, and cached in the
+        // bank; per-track SoundFont views swap between the cached region
+        // lists when a preset is selected. The preferred preset is decoded
+        // first so it becomes the bank's default.
+        val ordered = listOf(preferredIndex) + presets.indices.filter { it != preferredIndex }
         val presetInfos = presets.mapIndexed { idx, p ->
             SoundFontPreset(idx, p.name, p.program, p.bank)
         }
-        val sf = SoundFont(
+        val bank = SoundFontBank(
             name = infoName ?: "Piano SoundFont",
             sampleData = samples,
             presets = presetInfos,
         )
-        var firstPlayable = -1
-        for (i in presets.indices) {
+        for (i in ordered) {
             val found = regionsFor(i)
             if (found.isNotEmpty()) {
-                sf.setPresetRegions(i, found.sortedWith(compareBy({ it.keyLow }, { it.velocityLow })))
-                if (firstPlayable < 0) firstPlayable = i
+                bank.storePresetRegions(i, found.sortedWith(compareBy({ it.keyLow }, { it.velocityLow })))
             }
         }
-        if (firstPlayable < 0) throw SoundFontException("再生可能なゾーンがありません")
-        return sf
+        if (!bank.hasPlayablePreset()) throw SoundFontException("再生可能なゾーンがありません")
+        return bank
     }
 
-    fun load(input: ByteArrayInputStream): SoundFont = load(input.readBytes())
+    fun load(input: ByteArrayInputStream): SoundFontBank = loadBank(input.readBytes())
 
     /** Records the sample chunk and loads the small hydra chunks; never the samples. */
     private fun parseList(source: Source, start: Long, end: Long, parts: Parts) {

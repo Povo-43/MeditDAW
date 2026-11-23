@@ -121,6 +121,53 @@ object AudioExporter {
         return pcm
     }
 
+    /**
+     * Renders the whole [project] with each track through its own SoundFont
+     * and mixes the results into one PCM stream. Muted tracks are skipped;
+     * when any track is soloed, only solo tracks are rendered — matching
+     * realtime playback. [fontFor] supplies the per-track font (null tracks
+     * that are not ready are rendered with the first available font or, if
+     * none is loaded at all, the render fails with an empty array).
+     */
+    fun renderPcmMixed(
+        project: Project,
+        fontFor: (Int) -> SoundFont?,
+        masterGain: Float = 1f,
+    ): ShortArray {
+        val anySolo = project.tracks.any { it.isSolo }
+        val audible = project.tracks
+            .withIndex()
+            .filter { (_, t) -> !t.isMuted && (!anySolo || t.isSolo) }
+            .filter { (_, t) -> t.notes.isNotEmpty() || t.rawEvents.any { it.isSustain } }
+        if (audible.isEmpty()) return ShortArray(0)
+
+        val fallback = fontFor(-1)
+        var mixed: IntArray? = null
+        var frames = 0
+        for ((index, track) in audible) {
+            val font = fontFor(index) ?: fallback ?: continue
+            val single = project.copy(tracks = listOf(track), activeTrack = 0)
+            val pcm = renderPcm(single, font, masterGain)
+            if (pcm.isEmpty()) continue
+            if (mixed == null) {
+                frames = pcm.size
+                mixed = IntArray(frames).also { acc -> for (i in pcm.indices) acc[i] = pcm[i].toInt() }
+            } else {
+                if (pcm.size > frames) {
+                    val grown = IntArray(pcm.size)
+                    System.arraycopy(mixed, 0, grown, 0, frames)
+                    mixed = grown
+                    frames = pcm.size
+                }
+                for (i in pcm.indices) mixed[i] += pcm[i].toInt()
+            }
+        }
+        val acc = mixed ?: return ShortArray(0)
+        val out = ShortArray(acc.size)
+        for (i in acc.indices) out[i] = acc[i].coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).toShort()
+        return out
+    }
+
     /** Encodes stereo 16-bit PCM to an MP3 bitstream (CBR, [bitRateKbps]). */
     fun encodeMp3(pcm: ShortArray, out: OutputStream, bitRateKbps: Int = 192) {
         val lame = createWiredLame()

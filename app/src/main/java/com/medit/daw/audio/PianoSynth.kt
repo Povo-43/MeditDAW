@@ -195,10 +195,9 @@ class PianoSynth(
                     }
                 }
                 is Command.Preset -> {
-                    if (soundFont.selectPreset(cmd.index)) {
-                        val regions = soundFont.regionsForPreset(cmd.index) ?: emptyList()
-                        // Voices will use new regions on next note-on
-                    }
+                    // selectPreset installs the bank-cached regions of the new
+                    // preset, so the next note-on plays the new instrument.
+                    soundFont.selectPreset(cmd.index)
                 }
                 Command.Shutdown -> {
                     running = false

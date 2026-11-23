@@ -82,6 +82,7 @@ import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material.icons.rounded.ZoomIn
 import androidx.compose.material.icons.rounded.ZoomOut
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -124,7 +125,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.medit.daw.audio.AudioExportFormat
-import com.medit.daw.audio.AudioStatus
+import com.medit.daw.audio.Sf2Source
 import com.medit.daw.audio.TrackAudioStatus
 import com.medit.daw.editor.AutosaveState
 import com.medit.daw.editor.BootState
@@ -188,7 +189,7 @@ fun MeditApp(vm: EditorViewModel, initialUri: String? = null) {
         ) { uri -> uri?.let { vm.exportTrackAudio(it, AudioExportFormat.AAC, pendingTrackExportIndex) } }
         val soundFontLauncher = rememberLauncherForActivityResult(
             ActivityResultContracts.OpenDocument()
-        ) { uri -> uri?.let(vm::loadExternalSoundFont) }
+        ) { uri -> uri?.let { vm.loadExternalSoundFont(it) } }
 
         val onImport: () -> Unit = {
             importLauncher.launch(
@@ -482,13 +483,17 @@ private fun EditorScreen(
     var pickTargetTrack by remember { mutableIntStateOf(-1) }
     var presetMenuOpen by remember { mutableIntStateOf(-1) }
     var kebabMenuOpen by remember { mutableStateOf(false) }
+    var fontMenuOpen by remember { mutableStateOf(false) }
+    var showFontLibrary by remember { mutableStateOf(false) }
     var showTrackPanel by remember { mutableStateOf(true) }
     val getContentLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent(),
         onResult = { uri ->
             val indices = project?.tracks?.indices
             if (uri != null && indices != null && pickTargetTrack in indices) {
-                vm.loadExternalSoundFont(uri)
+                // Import into the global library and assign to the track that
+                // requested it.
+                vm.loadExternalSoundFont(uri, pickTargetTrack)
                 pickTargetTrack = -1
             }
         }
@@ -674,7 +679,7 @@ private fun EditorScreen(
             val activeTrack = project.tracks.getOrNull(activeIdx)
             if (activeTrack != null) {
                 val sf2Label = activeTrack.soundFontPath.takeIf { it.isNotBlank() }
-                    ?.let { it.substringAfterLast('/') } ?: "内蔵SF2"
+                    ?.let { it.substringAfterLast('/')?.removeSuffix(".sf2") } ?: "内蔵ピアノ"
                 val presets = vm.trackPresets(activeIdx)
                 val activePresetName = presets.getOrNull(activeTrack.presetIndex)?.name ?: "—"
                 Row(
@@ -715,12 +720,70 @@ private fun EditorScreen(
                     )
                     Spacer(Modifier.width(5.dp))
                     Column(Modifier.weight(1f)) {
-                        Text(
-                            "音源: $sf2Label",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                        )
+                        // SoundFont selector — tap to assign a font from the
+                        // app-wide global library to this track.
+                        Box {
+                            TextButton(
+                                onClick = { fontMenuOpen = true },
+                                contentPadding = PaddingValues(horizontal = 0.dp, vertical = 0.dp),
+                                modifier = Modifier.heightIn(min = 24.dp),
+                            ) {
+                                Text(
+                                    "音源: $sf2Label",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    maxLines = 1,
+                                )
+                            }
+                            DropdownMenu(
+                                expanded = fontMenuOpen,
+                                onDismissRequest = { fontMenuOpen = false },
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("内蔵ピアノ") },
+                                    leadingIcon = {
+                                        if (activeTrack.soundFontPath.isBlank()) {
+                                            Icon(Icons.Rounded.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(14.dp))
+                                        }
+                                    },
+                                    onClick = {
+                                        vm.assignTrackFont(activeIdx, Sf2Source.Bundled)
+                                        fontMenuOpen = false
+                                    },
+                                )
+                                val library = vm.libraryFonts().filter { !it.isBundled }
+                                library.forEach { f ->
+                                    DropdownMenuItem(
+                                        text = { Text("${f.name} (${f.presetCount}プリセット)") },
+                                        leadingIcon = {
+                                            if (activeTrack.soundFontPath == f.key) {
+                                                Icon(Icons.Rounded.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(14.dp))
+                                            }
+                                        },
+                                        onClick = {
+                                            vm.assignTrackFont(activeIdx, Sf2Source.File(f.key))
+                                            fontMenuOpen = false
+                                        },
+                                    )
+                                }
+                                HorizontalDivider()
+                                DropdownMenuItem(
+                                    text = { Text("SF2を読み込む…") },
+                                    onClick = {
+                                        pickTargetTrack = activeIdx
+                                        getContentLauncher.launch("audio/*")
+                                        fontMenuOpen = false
+                                    },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("音源ライブラリ…") },
+                                    onClick = {
+                                        showFontLibrary = true
+                                        fontMenuOpen = false
+                                    },
+                                )
+                            }
+                        }
                         // Preset selector — tap to open the preset list of this SF2
                         Box {
                             TextButton(
@@ -781,14 +844,21 @@ private fun EditorScreen(
                                 onClick = {
                                     pickTargetTrack = activeIdx
                                     getContentLauncher.launch("audio/*")
-                                    presetMenuOpen = -1
+                                    kebabMenuOpen = false
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("音源ライブラリ…") },
+                                onClick = {
+                                    showFontLibrary = true
+                                    kebabMenuOpen = false
                                 },
                             )
                             DropdownMenuItem(
                                 text = { Text("内蔵ピアノ音源に戻す") },
                                 onClick = {
                                     vm.reloadBundledSoundFont()
-                                    presetMenuOpen = -1
+                                    kebabMenuOpen = false
                                 },
                             )
                             HorizontalDivider()
@@ -813,7 +883,11 @@ private fun EditorScreen(
                         project = project,
                         vm = vm,
                         ui = ui,
-                        getContentLauncher = { mimeType -> getContentLauncher.launch(mimeType) },
+                        onImportForTrack = { trackIndex ->
+                            pickTargetTrack = trackIndex
+                            getContentLauncher.launch("audio/*")
+                        },
+                        onOpenLibrary = { showFontLibrary = true },
                         presetMenuOpen = presetMenuOpen,
                         onPresetMenuToggle = { presetMenuOpen = if (presetMenuOpen == it) -1 else it },
                         modifier = Modifier.fillMaxHeight().width(300.dp),
@@ -923,6 +997,14 @@ private fun EditorScreen(
                 showSettings = false
                 showHelp = true
             },
+        )
+    }
+    if (showFontLibrary) {
+        SoundFontLibraryDialog(
+            ui = ui,
+            vm = vm,
+            onDismiss = { showFontLibrary = false },
+            onLoadSoundFont = onLoadSoundFont,
         )
     }
     if (showHelp) {
@@ -2221,7 +2303,8 @@ private fun TrackPanel(
     project: Project,
     vm: EditorViewModel,
     ui: EditorUiState,
-    getContentLauncher: (String) -> Unit,
+    onImportForTrack: (Int) -> Unit,
+    onOpenLibrary: () -> Unit,
     presetMenuOpen: Int,
     onPresetMenuToggle: (Int) -> Unit,
     modifier: Modifier = Modifier,
@@ -2242,14 +2325,15 @@ private fun TrackPanel(
                     val isActive = index == vm.activeTrackIndex()
                     val status = ui.audio[index]
                     val statusText = when (status) {
-                        is TrackAudioStatus.Ready -> "OK"
+                        is TrackAudioStatus.Ready -> status.presetName
                         is TrackAudioStatus.Failed -> "エラー: ${status.message}"
                         is TrackAudioStatus.Loading -> "読込中…"
                         else -> "—"
                     }
                     val sf2Label = track.soundFontPath.takeIf { it.isNotBlank() }
-                        ?.let { it.substringAfterLast('/') } ?: "内蔵SF2"
+                        ?.let { it.substringAfterLast('/')?.removeSuffix(".sf2") } ?: "内蔵ピアノ"
                     var trackMenuOpen by remember { mutableStateOf(false) }
+                    var fontMenuOpen by remember { mutableStateOf(false) }
 
                     Surface(
                         onClick = { vm.selectTrack(index) },
@@ -2295,15 +2379,21 @@ private fun TrackPanel(
                                         DropdownMenuItem(
                                             text = { Text("SF2を読み込む…") },
                                             onClick = {
-                                                getContentLauncher("audio/*")
+                                                onImportForTrack(index)
+                                                trackMenuOpen = false
+                                            },
+                                        )
+                                        DropdownMenuItem(
+                                            text = { Text("音源ライブラリ…") },
+                                            onClick = {
+                                                onOpenLibrary()
                                                 trackMenuOpen = false
                                             },
                                         )
                                         DropdownMenuItem(
                                             text = { Text("内蔵ピアノ音源に戻す") },
                                             onClick = {
-                                                vm.selectTrack(index)
-                                                vm.reloadBundledSoundFont()
+                                                vm.assignTrackFont(index, Sf2Source.Bundled)
                                                 trackMenuOpen = false
                                             },
                                         )
@@ -2334,12 +2424,67 @@ private fun TrackPanel(
                                     }
                                 }
                             }
-                            Text(
-                                "SF2: $sf2Label · $statusText",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                            )
+                            // SoundFont selector — assign from the global library.
+                            Box {
+                                TextButton(
+                                    onClick = { fontMenuOpen = true },
+                                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
+                                    modifier = Modifier.heightIn(min = 22.dp),
+                                ) {
+                                    Text(
+                                        "音源: $sf2Label · $statusText",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        maxLines = 1,
+                                    )
+                                }
+                                DropdownMenu(
+                                    expanded = fontMenuOpen,
+                                    onDismissRequest = { fontMenuOpen = false },
+                                ) {
+                                    DropdownMenuItem(
+                                        text = { Text("内蔵ピアノ") },
+                                        leadingIcon = {
+                                            if (track.soundFontPath.isBlank()) {
+                                                Icon(Icons.Rounded.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(14.dp))
+                                            }
+                                        },
+                                        onClick = {
+                                            vm.assignTrackFont(index, Sf2Source.Bundled)
+                                            fontMenuOpen = false
+                                        },
+                                    )
+                                    vm.libraryFonts().filter { !it.isBundled }.forEach { f ->
+                                        DropdownMenuItem(
+                                            text = { Text("${f.name} (${f.presetCount}プリセット)") },
+                                            leadingIcon = {
+                                                if (track.soundFontPath == f.key) {
+                                                    Icon(Icons.Rounded.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(14.dp))
+                                                }
+                                            },
+                                            onClick = {
+                                                vm.assignTrackFont(index, Sf2Source.File(f.key))
+                                                fontMenuOpen = false
+                                            },
+                                        )
+                                    }
+                                    HorizontalDivider()
+                                    DropdownMenuItem(
+                                        text = { Text("SF2を読み込む…") },
+                                        onClick = {
+                                            onImportForTrack(index)
+                                            fontMenuOpen = false
+                                        },
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("音源ライブラリ…") },
+                                        onClick = {
+                                            onOpenLibrary()
+                                            fontMenuOpen = false
+                                        },
+                                    )
+                                }
+                            }
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 // Mute (M) / Solo (S) toggle buttons, DAW style.
                                 TextButton(
@@ -2386,9 +2531,21 @@ private fun TrackPanel(
                         expanded = presetMenuOpen == index,
                         onDismissRequest = { onPresetMenuToggle(-1) },
                     ) {
-                        vm.trackPresets(index).forEachIndexed { i, p ->
+                        val presets = vm.trackPresets(index)
+                        if (presets.isEmpty()) {
+                            DropdownMenuItem(
+                                text = { Text("プリセットがありません") },
+                                onClick = { onPresetMenuToggle(-1) },
+                            )
+                        }
+                        presets.forEachIndexed { i, p ->
                             DropdownMenuItem(
                                 text = { Text("${i + 1}. ${p.name}") },
+                                leadingIcon = {
+                                    if (i == track.presetIndex) {
+                                        Icon(Icons.Rounded.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(14.dp))
+                                    }
+                                },
                                 onClick = {
                                     vm.setTrackPreset(index, i)
                                     onPresetMenuToggle(-1)
@@ -2400,4 +2557,110 @@ private fun TrackPanel(
             }
         }
     }
+}
+
+/**
+ * App-wide SoundFont library manager. Lists every parsed bank (the bundled
+ * piano plus imported files), shows which tracks use each font and lets the
+ * user assign a font to the active track, add a new SF2, or remove a file
+ * font (its tracks fall back to the bundled piano).
+ */
+@Composable
+private fun SoundFontLibraryDialog(
+    ui: EditorUiState,
+    vm: EditorViewModel,
+    onDismiss: () -> Unit,
+    onLoadSoundFont: () -> Unit,
+) {
+    // ui.audio changes whenever a font finishes loading; re-snapshot then.
+    val fonts = remember(ui.audio) { vm.libraryFonts() }
+    val activeIdx = vm.activeTrackIndex()
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        titleContentColor = MaterialTheme.colorScheme.onSurface,
+        textContentColor = MaterialTheme.colorScheme.onSurface,
+        title = { Text("音源ライブラリ") },
+        text = {
+            Column {
+                Text(
+                    "読み込んだSoundFontはここにまとめて管理され、どのトラックにも割り当てできます。同じファイルを複数トラックで使ってもメモリは共有されます。",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(10.dp))
+                fonts.forEach { font ->
+                    val source = if (font.isBundled) Sf2Source.Bundled else Sf2Source.File(font.key)
+                    val usedBy = font.usedByTracks.joinToString(", ") { "${it + 1}" }
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainer,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 2.dp),
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    font.name,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                Text(
+                                    buildString {
+                                        append("${font.presetCount} プリセット")
+                                        append(" ・ 使用中: ")
+                                        append(usedBy.ifBlank { "なし" })
+                                    },
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                )
+                            }
+                            TextButton(
+                                onClick = {
+                                    vm.assignTrackFont(activeIdx, source)
+                                    onDismiss()
+                                },
+                                enabled = !font.usedByTracks.contains(activeIdx),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                            ) {
+                                Text(
+                                    if (font.usedByTracks.contains(activeIdx)) "使用中"
+                                    else "割り当て",
+                                    style = MaterialTheme.typography.labelMedium,
+                                )
+                            }
+                            if (!font.isBundled) {
+                                IconButton(onClick = { vm.removeLibraryFont(font.key) }) {
+                                    Icon(
+                                        Icons.Rounded.Delete,
+                                        contentDescription = "ライブラリから削除",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(18.dp),
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = onLoadSoundFont,
+                enabled = !ui.busy.soundFont,
+            ) {
+                Text(if (ui.busy.soundFont) "読込中…" else "SF2を追加…")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("閉じる") }
+        },
+    )
 }

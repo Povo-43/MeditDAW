@@ -16,9 +16,45 @@ sealed interface TrackAudioStatus {
     data class Failed(val trackIndex: Int, val message: String) : TrackAudioStatus
 }
 
+/** Which SoundFont a track uses: the bundled piano or a file in the library. */
+sealed interface Sf2Source {
+    data object Bundled : Sf2Source
+    data class File(val path: String) : Sf2Source
+
+    /** Library key of this source ("bundled" or the file path). */
+    val key: String
+        get() = when (this) {
+            Bundled -> BUNDLED_KEY
+            is File -> path
+        }
+
+    companion object {
+        const val BUNDLED_KEY = "bundled"
+
+        /** Display name shown in the UI for a source. */
+        fun displayName(source: Sf2Source): String = when (source) {
+            Bundled -> "内蔵ピアノ"
+            is Sf2Source.File -> java.io.File(source.path).nameWithoutExtension
+        }
+    }
+}
+
+/** One entry of the app-wide SoundFont library, for the management UI. */
+data class LibraryFont(
+    val key: String,
+    val name: String,
+    val presetCount: Int,
+    val isBundled: Boolean,
+    /** Track indices currently using this font. */
+    val usedByTracks: List<Int>,
+)
+
 /**
  * One synth per track, so each track can be assigned its own SoundFont (.sf2).
- * Track index 0 is the default track and loads the bundled piano.sf2 automatically.
+ *
+ * Parsed banks live in a global library keyed by source, so the same SF2 file
+ * assigned to several tracks is parsed once and its sample data is shared;
+ * each track gets a lightweight [SoundFont] view with its own preset state.
  */
 class MultiAudioEngine(private val context: Context) {
 
@@ -28,7 +64,12 @@ class MultiAudioEngine(private val context: Context) {
 
     /** Synth per track index. Sparse — null until that track's SF2 is loaded. */
     private val synths = mutableMapOf<Int, PianoSynth>()
+    /** Per-track SoundFont view (its own preset state over a shared bank). */
     private val fonts = mutableMapOf<Int, SoundFont>()
+    /** Per-track assigned source. */
+    private val trackSources = mutableMapOf<Int, Sf2Source>()
+    /** Global library: source key -> parsed bank (sample data shared). */
+    private val library = java.util.concurrent.ConcurrentHashMap<String, SoundFontBank>()
     /** User volume multiplier (1 = neutral), re-applied whenever a synth is installed. */
     @Volatile private var userVolume: Float = 1f
 
@@ -40,7 +81,81 @@ class MultiAudioEngine(private val context: Context) {
         _statuses.value = _statuses.value.toMutableMap().apply { put(trackIndex, status) }
     }
 
-    private fun installForTrack(trackIndex: Int, font: SoundFont) {
+    // -----------------------------------------------------------------
+    // Global library
+    // -----------------------------------------------------------------
+
+    /** Parsed bank for [source], parsing it on first use. Blocking — call on IO. */
+    private fun bankFor(source: Sf2Source): SoundFontBank =
+        library.computeIfAbsent(source.key) { key ->
+            when (source) {
+                Sf2Source.Bundled -> {
+                    val bytes = context.assets.open("piano.sf2").use { it.readBytes() }
+                    SoundFontLoader.loadBank(bytes)
+                }
+                is Sf2Source.File -> SoundFontLoader.loadBank(java.io.File(source.path))
+            }
+        }
+
+    /** All fonts in the global library with the tracks using them. */
+    fun libraryFonts(): List<LibraryFont> {
+        val usedBy = synchronized(trackSources) {
+            trackSources.entries.groupBy({ it.value.key }, { it.key })
+        }
+        return library.map { (key, bank) ->
+            LibraryFont(
+                key = key,
+                name = if (key == Sf2Source.BUNDLED_KEY) "内蔵ピアノ"
+                else bank.name.ifBlank { key.substringAfterLast('/') },
+                presetCount = bank.presets.size,
+                isBundled = key == Sf2Source.BUNDLED_KEY,
+                usedByTracks = usedBy[key].orEmpty().sorted(),
+            )
+        }
+    }
+
+    fun hasFont(key: String): Boolean = library.containsKey(key)
+
+    /** Is a library file still readable / parseable? */
+    fun isFileFontValid(path: String): Boolean =
+        runCatching { SoundFontLoader.loadBank(java.io.File(path)) }.isSuccess
+
+    /**
+     * Removes a file font from the library. Tracks still using it fall back
+     * to the bundled piano. Returns the affected track indices.
+     */
+    fun removeFont(key: String): List<Int> {
+        if (key == Sf2Source.BUNDLED_KEY) return emptyList()
+        library.remove(key)
+        val affected = trackSources.filterValues { it.key == key }.keys.toList()
+        for (trackIndex in affected) {
+            synths.remove(trackIndex)?.close()
+            fonts.remove(trackIndex)
+            trackSources.remove(trackIndex)
+            loadForTrack(trackIndex, Sf2Source.Bundled)
+        }
+        return affected
+    }
+
+    // -----------------------------------------------------------------
+    // Track installation
+    // -----------------------------------------------------------------
+
+    private fun installForTrack(trackIndex: Int, source: Sf2Source, presetIndex: Int) {
+        val bank = try {
+            bankFor(source)
+        } catch (t: Throwable) {
+            postStatus(
+                trackIndex,
+                TrackAudioStatus.Failed(trackIndex, "音源を読み込めません: ${t.message ?: t.javaClass.simpleName}")
+            )
+            return
+        }
+        val font = SoundFont(bank)
+        val wanted = presetIndex.takeIf { it in bank.presets.indices }
+        if (wanted == null || !font.selectPreset(wanted) || font.regions.isEmpty()) {
+            font.selectFirstPlayable()
+        }
         val newSynth = try {
             PianoSynth(font)
         } catch (t: Throwable) {
@@ -48,37 +163,55 @@ class MultiAudioEngine(private val context: Context) {
             return
         }
         newSynth.setMasterVolume(userVolume)
+        synths.remove(trackIndex)?.close()
         synths[trackIndex] = newSynth
         fonts[trackIndex] = font
-        val name = font.name
-        val preset = font.activePreset()?.name ?: "Preset 0"
-        val regions = font.regionCount
-        postStatus(trackIndex, TrackAudioStatus.Ready(trackIndex, name, preset, regions))
+        trackSources[trackIndex] = source
+        postStatus(
+            trackIndex,
+            TrackAudioStatus.Ready(
+                trackIndex,
+                Sf2Source.displayName(source),
+                font.activePreset()?.name ?: "Preset",
+                font.regionCount,
+            )
+        )
     }
 
-    /** Load the bundled piano.sf2 for the given track. */
-    fun loadBundledForTrack(trackIndex: Int) {
+    /**
+     * Assigns [source] to [trackIndex] and (re)installs its synth with
+     * [presetIndex] selected. Re-assigning the source a track already uses
+     * only re-applies the preset, never re-parses the bank.
+     */
+    fun loadForTrack(trackIndex: Int, source: Sf2Source, presetIndex: Int = 0) {
         postStatus(trackIndex, TrackAudioStatus.Loading)
         scope.launch {
-            try {
-                val bytes = context.assets.open("piano.sf2").use { it.readBytes() }
-                installForTrack(trackIndex, SoundFontLoader.load(bytes))
-            } catch (t: Throwable) {
-                postStatus(trackIndex, TrackAudioStatus.Failed(trackIndex, "音源を読み込めません: ${t.message ?: t.javaClass.simpleName}"))
+            // Same source and a live synth: just re-apply the preset.
+            if (trackSources[trackIndex] == source && synths[trackIndex] != null) {
+                applyPreset(trackIndex, presetIndex)
+                return@launch
             }
+            installForTrack(trackIndex, source, presetIndex)
         }
     }
 
-    /** Load an external .sf2 for the given track. */
-    fun loadExternalForTrack(trackIndex: Int, file: File) {
-        postStatus(trackIndex, TrackAudioStatus.Loading)
-        scope.launch {
-            try {
-                installForTrack(trackIndex, SoundFontLoader.load(file))
-            } catch (t: Throwable) {
-                postStatus(trackIndex, TrackAudioStatus.Failed(trackIndex, "SoundFontを読み込めません: ${t.message ?: t.javaClass.simpleName}"))
-            }
+    private fun applyPreset(trackIndex: Int, presetIndex: Int) {
+        val font = fonts[trackIndex] ?: return
+        val applied = presetIndex.takeIf { it in font.presets.indices }
+        if (applied == null || !font.selectPreset(applied) || font.regions.isEmpty()) {
+            font.selectFirstPlayable()
         }
+        synths[trackIndex]?.selectPreset(font.presetIndex)
+        val source = trackSources[trackIndex]
+        postStatus(
+            trackIndex,
+            TrackAudioStatus.Ready(
+                trackIndex,
+                source?.let { Sf2Source.displayName(it) } ?: font.name,
+                font.activePreset()?.name ?: "Preset",
+                font.regionCount,
+            )
+        )
     }
 
     /** Is the synth for [trackIndex] ready to play? */
@@ -87,15 +220,15 @@ class MultiAudioEngine(private val context: Context) {
         return s != null && _statuses.value.getOrDefault(trackIndex, TrackAudioStatus.Loading) is TrackAudioStatus.Ready
     }
 
-    /** The SoundFont loaded for [trackIndex], if any. */
+    /** The SoundFont view loaded for [trackIndex], if any. */
     fun soundFontFor(trackIndex: Int): SoundFont? = fonts[trackIndex]
 
-    /** All SoundFonts currently loaded in this engine (global library). */
-    fun loadedFonts(): List<SoundFont> = fonts.values.toList()
+    /** The source assigned to [trackIndex], if any. */
+    fun trackSource(trackIndex: Int): Sf2Source? = trackSources[trackIndex]
 
     /** Switches the active preset of the synth for [trackIndex]. */
     fun selectPreset(trackIndex: Int, presetIndex: Int) {
-        synths[trackIndex]?.selectPreset(presetIndex)
+        applyPreset(trackIndex, presetIndex)
     }
 
     fun noteOn(trackIndex: Int, pitch: Int, velocity: Int, channel: Int = 0) {
@@ -137,6 +270,7 @@ class MultiAudioEngine(private val context: Context) {
         synths.values.forEach { it.close() }
         synths.clear()
         fonts.clear()
+        trackSources.clear()
         _statuses.value = mutableMapOf()
     }
 }
