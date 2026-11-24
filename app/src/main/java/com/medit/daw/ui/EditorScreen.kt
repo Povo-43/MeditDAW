@@ -374,13 +374,13 @@ private fun WelcomeScreen(
             )
             Spacer(Modifier.height(12.dp))
             Text(
-                "Medit",
+                "MeditDAW",
                 style = MaterialTheme.typography.displaySmall,
                 color = Paper,
             )
             Spacer(Modifier.height(6.dp))
             Text(
-                "タブレットのための、ピアノだけのMIDIエディタ",
+                "タブレットのための、マルチトラックMIDIエディタ",
                 style = MaterialTheme.typography.titleMedium,
                 color = Mist,
                 textAlign = TextAlign.Center,

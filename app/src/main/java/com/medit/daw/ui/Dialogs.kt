@@ -838,7 +838,7 @@ fun SettingsDialog(
         )
         Spacer(Modifier.height(8.dp))
         Text(
-            "Medit ${BuildConfig.VERSION_NAME} ・ ピアノ専用MIDIエディタ",
+            "MeditDAW ${BuildConfig.VERSION_NAME} ・ マルチトラックMIDIエディタ",
             style = MaterialTheme.typography.labelSmall,
             color = Mist,
         )
