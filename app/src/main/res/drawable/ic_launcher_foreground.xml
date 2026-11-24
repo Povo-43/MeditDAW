@@ -3,16 +3,24 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
+    <!-- Track 1: amber -->
     <path
         android:fillColor="#F2B65A"
-        android:pathData="M26,30 h56 a4,4 0 0 1 4,4 v40 a4,4 0 0 1 -4,4 h-56 a4,4 0 0 1 -4,-4 v-40 a4,4 0 0 1 4,-4 z" />
-    <path
-        android:fillColor="#111820"
-        android:pathData="M32,38 h44 v10 h-44 z" />
-    <path
-        android:fillColor="#111820"
-        android:pathData="M40,54 h44 v8 h-44 z" />
+        android:pathData="M34,36 h36 a4,4 0 0 1 4,4 v0 a4,4 0 0 1 -4,4 h-36 a4,4 0 0 1 -4,-4 v0 a4,4 0 0 1 4,-4 z" />
+    <!-- Track 2: teal -->
     <path
         android:fillColor="#3ED6C4"
-        android:pathData="M32,66 h22 v6 h-22 z" />
+        android:pathData="M42,48 h32 a4,4 0 0 1 4,4 v0 a4,4 0 0 1 -4,4 h-32 a4,4 0 0 1 -4,-4 v0 a4,4 0 0 1 4,-4 z" />
+    <!-- Track 3: amber (lighter) -->
+    <path
+        android:fillColor="#F8CE85"
+        android:pathData="M34,60 h28 a4,4 0 0 1 4,4 v0 a4,4 0 0 1 -4,4 h-28 a4,4 0 0 1 -4,-4 v0 a4,4 0 0 1 4,-4 z" />
+    <!-- Track 4: dim slate -->
+    <path
+        android:fillColor="#5D6B7A"
+        android:pathData="M44,72 h30 a4,4 0 0 1 4,4 v0 a4,4 0 0 1 -4,4 h-30 a4,4 0 0 1 -4,-4 v0 a4,4 0 0 1 4,-4 z" />
+    <!-- Playhead -->
+    <path
+        android:fillColor="#FF6F6A"
+        android:pathData="M62,28 h3 v52 h-3 z" />
 </vector>
