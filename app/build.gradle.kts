@@ -12,8 +12,8 @@ android {
         applicationId = "com.medit.daw"
         minSdk = 26
         targetSdk = 34
-        versionCode = 12
-        versionName = "4.5.3"
+        versionCode = 13
+        versionName = "4.5.4"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

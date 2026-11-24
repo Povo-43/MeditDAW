@@ -3,6 +3,7 @@ package com.medit.daw.editor
 import android.app.Application
 import android.content.ContentResolver
 import android.net.Uri
+import android.os.SystemClock
 import android.provider.OpenableColumns
 import android.view.KeyEvent
 import androidx.core.content.FileProvider
@@ -64,6 +65,7 @@ import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.roundToInt
 
 // Only guards against runaway copies; the real ceiling for a bank is its
 // decoded sample size, which SoundFontLoader derives from the app heap.
@@ -233,7 +235,27 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     private val midiPendingNotes = HashMap<Int, MidiNoteStart>()
     private var midiRecordUndoPushed = false
 
-    private data class MidiNoteStart(val startTick: Int, val velocity: Int)
+    /** Wall-clock base for the stopped-transport recording cursor. */
+    private var midiArmMillis = 0L
+    /** Playhead position when recording was armed (or last seeked). */
+    private var midiArmStartTick = 0.0
+
+    /**
+     * The recording clock: the playhead while playing, otherwise a real-time
+     * cursor that advances from where recording was armed (or last seeked).
+     * Notes land sequentially in time even when the transport is stopped —
+     * gaps between phrases become rests.
+     */
+    private fun recordClockTick(): Double {
+        if (playback.isPlaying.value) return playheadTick()
+        val p = _project.value ?: return midiArmStartTick
+        val tempo = p.tempoMap()
+        val elapsedSec = (SystemClock.uptimeMillis() - midiArmMillis).coerceAtLeast(0L) / 1000.0
+        val baseTick = midiArmStartTick.toInt().coerceAtLeast(0)
+        return tempo.tickAtSeconds(tempo.secondsAt(baseTick) + elapsedSec)
+    }
+
+    private data class MidiNoteStart(val startTickRaw: Double, val velocity: Int)
 
     private data class EditSnapshot(
         val notes: List<Note>,
@@ -841,6 +863,12 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
 
     fun seekTo(tick: Double) {
         playback.seek(tick)
+        // The stopped-transport recording cursor restarts from the new
+        // position, so punching in mid-song records from there.
+        if (_midiRecording.value) {
+            midiArmMillis = SystemClock.uptimeMillis()
+            midiArmStartTick = tick
+        }
     }
 
     fun setGrid(grid: GridUnit) {
@@ -1723,6 +1751,10 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         if (on) {
             midiRecordUndoPushed = false
             midiPendingNotes.clear()
+            // The stopped-transport recording cursor starts here and advances
+            // in real time while the user plays.
+            midiArmMillis = SystemClock.uptimeMillis()
+            midiArmStartTick = playheadTick()
         } else {
             flushPendingMidiNotes()
             audio.setSustainAll(false)
@@ -1750,9 +1782,12 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     private fun onHardwareNoteOn(pitch: Int, velocity: Int) {
         if (audio.isReady(activeTrackIndex())) audio.noteOn(activeTrackIndex(), pitch, velocity.coerceIn(1, 127), trackChannel())
         if (!_midiRecording.value) return
+        // A retriggered key closes the previous note on this pitch first so a
+        // fast repeat records two notes instead of overwriting the pending one.
+        midiPendingNotes.remove(pitch)?.let { commitRecordedNote(pitch, it) }
         if (midiPendingNotes.size < 128) {
             midiPendingNotes[pitch] = MidiNoteStart(
-                startTick = playheadTick().toInt().coerceAtLeast(0),
+                startTickRaw = recordClockTick(),
                 velocity = velocity,
             )
         }
@@ -1767,15 +1802,18 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
 
     private fun commitRecordedNote(pitch: Int, start: MidiNoteStart) {
         val p = _project.value ?: return
-        val snappedStart = snapIfNeeded(start.startTick).coerceAtLeast(0)
-        val rawDuration = playheadTick().toInt() - snappedStart
-        val duration = if (rawDuration >= 8) rawDuration else _prefs.value.inputDuration.ticks(p.ppq)
+        // Note length comes from the recording clock (real elapsed time when
+        // stopped, the playhead when playing), so keying a phrase records its
+        // actual rhythm regardless of the transport state.
+        val endTickRaw = recordClockTick()
+        val duration = (endTickRaw - start.startTickRaw).roundToInt().coerceAtLeast(1)
+        val snappedStart = snapIfNeeded(start.startTickRaw.toInt()).coerceAtLeast(0)
         val id = p.nextNoteId
         val note = Note(
             id = id,
             pitch = pitch.coerceIn(0, 127),
             startTick = snappedStart,
-            durationTicks = duration.coerceAtLeast(1),
+            durationTicks = duration,
             velocity = start.velocity.coerceIn(1, 127),
             channel = p.tracks[activeTrackIndex()].channel,
         )
