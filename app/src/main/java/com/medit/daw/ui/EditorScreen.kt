@@ -128,6 +128,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.medit.daw.audio.AudioExportFormat
+import com.medit.daw.audio.LibraryFont
 import com.medit.daw.audio.Sf2Source
 import com.medit.daw.audio.TrackAudioStatus
 import com.medit.daw.editor.AutosaveState
@@ -499,6 +500,7 @@ private fun EditorScreen(
     var showTrackDetails by rememberSaveable { mutableStateOf(true) }
     /** Track index being renamed, -1 when closed. */
     var renameTrackIndex by remember { mutableIntStateOf(-1) }
+    val libraryFonts by vm.libraryFonts.collectAsStateWithLifecycle()
     val rollHost = remember(vm) {
         object : RollHost {
             override fun project() = vm.project()
@@ -732,28 +734,23 @@ private fun EditorScreen(
                     ) {
                         Text("S", style = MaterialTheme.typography.labelMedium)
                     }
-                    Spacer(Modifier.width(6.dp))
-                    Icon(
-                        Icons.Rounded.LibraryMusic,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(14.dp),
-                    )
-                    Spacer(Modifier.width(5.dp))
-                    Column(Modifier.weight(1f)) {
+                    Spacer(Modifier.width(4.dp))
+                    // Sound source + preset selectors share one compact line.
+                    Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
                         // SoundFont selector — tap to assign a font from the
                         // app-wide global library to this track.
-                        Box {
+                        Box(Modifier.weight(1f)) {
                             TextButton(
                                 onClick = { fontMenuOpen = true },
                                 contentPadding = PaddingValues(horizontal = 0.dp, vertical = 0.dp),
-                                modifier = Modifier.heightIn(min = 24.dp),
+                                modifier = Modifier.heightIn(min = 30.dp),
                             ) {
                                 Text(
                                     "音源: $sf2Label",
                                     style = MaterialTheme.typography.labelMedium,
                                     color = MaterialTheme.colorScheme.primary,
                                     maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
                                 )
                             }
                             DropdownMenu(
@@ -772,7 +769,7 @@ private fun EditorScreen(
                                         fontMenuOpen = false
                                     },
                                 )
-                                val library = vm.libraryFonts().filter { !it.isBundled }
+                                val library = libraryFonts.filter { !it.isBundled }
                                 library.forEach { f ->
                                     DropdownMenuItem(
                                         text = { Text("${f.name} (${f.presetCount}プリセット)") },
@@ -798,17 +795,18 @@ private fun EditorScreen(
                             }
                         }
                         // Preset selector — tap to open the preset list of this SF2
-                        Box {
+                        Box(Modifier.weight(1.4f)) {
                             TextButton(
                                 onClick = { presetMenuOpen = activeIdx },
                                 contentPadding = PaddingValues(horizontal = 0.dp, vertical = 0.dp),
-                                modifier = Modifier.heightIn(min = 24.dp),
+                                modifier = Modifier.heightIn(min = 30.dp),
                             ) {
                                 Text(
                                     "プリセット: $activePresetName (${activeTrack.presetIndex + 1}/${presets.size})",
-                                    style = MaterialTheme.typography.labelSmall,
+                                    style = MaterialTheme.typography.labelMedium,
                                     color = MaterialTheme.colorScheme.primary,
                                     maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
                                 )
                             }
                             DropdownMenu(
@@ -910,6 +908,7 @@ private fun EditorScreen(
                         project = project,
                         vm = vm,
                         ui = ui,
+                        libraryFonts = libraryFonts,
                         onOpenLibrary = { showFontLibrary = true },
                         onRenameTrack = { renameTrackIndex = it },
                         presetMenuOpen = presetMenuOpen,
@@ -1027,6 +1026,7 @@ private fun EditorScreen(
         SoundFontLibraryDialog(
             ui = ui,
             vm = vm,
+            fonts = libraryFonts,
             onDismiss = { showFontLibrary = false },
             onLoadSoundFont = onLoadSoundFont,
         )
@@ -2351,6 +2351,7 @@ private fun TrackPanel(
     project: Project,
     vm: EditorViewModel,
     ui: EditorUiState,
+    libraryFonts: List<LibraryFont>,
     onOpenLibrary: () -> Unit,
     onRenameTrack: (Int) -> Unit,
     presetMenuOpen: Int,
@@ -2481,7 +2482,7 @@ private fun TrackPanel(
                                             fontMenuOpen = false
                                         },
                                     )
-                                    vm.libraryFonts().filter { !it.isBundled }.forEach { f ->
+                                    libraryFonts.filter { !it.isBundled }.forEach { f ->
                                         DropdownMenuItem(
                                             text = { Text("${f.name} (${f.presetCount}プリセット)") },
                                             leadingIcon = {
@@ -2618,11 +2619,10 @@ private fun TrackExportChip(label: String, onClick: () -> Unit) {
 private fun SoundFontLibraryDialog(
     ui: EditorUiState,
     vm: EditorViewModel,
+    fonts: List<LibraryFont>,
     onDismiss: () -> Unit,
     onLoadSoundFont: () -> Unit,
 ) {
-    // ui.audio changes whenever a font finishes loading; re-snapshot then.
-    val fonts = remember(ui.audio) { vm.libraryFonts() }
     val activeIdx = vm.activeTrackIndex()
 
     AlertDialog(

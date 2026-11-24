@@ -204,6 +204,14 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     val hover: StateFlow<HoverInfo?> = _hover.asStateFlow()
     val inspectorNoteId: StateFlow<Long?> = _inspectorNoteId.asStateFlow()
     val audioStatus: StateFlow<Map<Int, TrackAudioStatus>> = audio.statuses
+
+    private val _libraryFonts = MutableStateFlow(audio.libraryFonts())
+    /** App-wide SoundFont library; refreshed on import / removal / assignment. */
+    val libraryFonts: StateFlow<List<LibraryFont>> = _libraryFonts.asStateFlow()
+
+    private fun refreshLibraryFonts() {
+        _libraryFonts.value = audio.libraryFonts()
+    }
     val uiCommands: SharedFlow<UiCommand> = _uiCommands.asSharedFlow()
     val viewCommands: SharedFlow<ViewCommand> = _viewCommands.asSharedFlow()
     val projectBrowserVisible: StateFlow<Boolean> = _projectBrowserVisible.asStateFlow()
@@ -403,6 +411,9 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                 if (ready) {
                     audio.setVolume(if (_soundFontCustom.value) _prefs.value.soundFontVolume else 1f)
                 }
+                // Assignments add/remove banks from the library; keep the
+                // library list in sync with whatever the engine just did.
+                refreshLibraryFonts()
             }
         }
         viewModelScope.launch { restoreWorkspace() }
@@ -1189,6 +1200,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         _project.value = updated
         playback.setProject(updated)
         audio.loadForTrack(trackIndex, source, track.presetIndex)
+        refreshLibraryFonts()
         if (trackIndex == activeTrackIndex()) syncSoundFontUiState()
         postMessage("${track.name} の音源を「${Sf2Source.displayName(source)}」に変更しました")
     }
@@ -1198,6 +1210,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         if (key == Sf2Source.BUNDLED_KEY) return
         val affected = audio.removeFont(key)
         val p = _project.value ?: return
+        refreshLibraryFonts()
         if (affected.isEmpty()) {
             postMessage("ライブラリから削除しました")
             return
@@ -1209,6 +1222,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         _project.value = updated
         playback.setProject(updated)
         syncSoundFontUiState()
+        refreshLibraryFonts()
         postMessage("ライブラリから削除しました（使用していたトラックは内蔵ピアノに戻りました）")
     }
 
@@ -1674,6 +1688,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                     }
                     _soundFontCustom.value = true
                     _soundFontFileName.value = file.name
+                    refreshLibraryFonts()
                     postMessage("SoundFont「$displayName」をライブラリに追加しました")
                 },
                 onFailure = { t ->
