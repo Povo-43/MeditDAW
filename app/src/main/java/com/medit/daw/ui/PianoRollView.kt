@@ -869,8 +869,24 @@ class PianoRollView @JvmOverloads constructor(
         tempoDragFromTick = findTempoNodeAt(event.x, event.y)?.tick ?: -1
         tempoPreviewTick = xToTick(event.x).toInt().coerceAtLeast(0)
         tempoPreviewBpm = yToBpm(event.y)
+        tempoRampToggled = false
+        if (tempoDragFromTick > 0) {
+            // Long-press flips the point between step and linear ramp.
+            handler.postDelayed(tempoLongPressRunnable, 500L)
+        }
         performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
     }
+
+    private val tempoLongPressRunnable = Runnable {
+        if (mode == Mode.TEMPO_DRAG && tempoDragFromTick > 0 && !gestureMoved && !tempoRampToggled) {
+            tempoRampToggled = true
+            host?.toggleTempoRamp(tempoDragFromTick)
+            performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+            invalidate()
+        }
+    }
+
+    private var tempoRampToggled = false
 
     /** Tick of the node being dragged, -1 while creating a new one. */
     private var tempoDragFromTick = -1
@@ -897,14 +913,18 @@ class PianoRollView @JvmOverloads constructor(
     }
 
     private fun updateTempoTouch(x: Float, y: Float) {
+        if (gestureMoved) handler.removeCallbacks(tempoLongPressRunnable)
         tempoPreviewTick = xToTick(x).toInt().coerceAtLeast(0)
         tempoPreviewBpm = yToBpm(y)
         invalidate()
     }
 
     private fun commitTempoTouch() {
+        handler.removeCallbacks(tempoLongPressRunnable)
         val from = tempoDragFromTick
-        if (from >= 0) {
+        if (tempoRampToggled) {
+            // The long-press already flipped the curve; do nothing else.
+        } else if (from >= 0) {
             if (gestureMoved) {
                 // The base tempo (tick 0) only changes value, never position.
                 val target = if (from == 0) 0 else tempoPreviewTick
@@ -918,6 +938,7 @@ class PianoRollView @JvmOverloads constructor(
         }
         tempoDragFromTick = -1
         tempoPreviewBpm = 0.0
+        tempoRampToggled = false
         invalidate()
     }
 
@@ -1173,6 +1194,8 @@ class PianoRollView @JvmOverloads constructor(
         sustainPreview = null
         tempoDragFromTick = -1
         tempoPreviewBpm = 0.0
+        tempoRampToggled = false
+        handler.removeCallbacks(tempoLongPressRunnable)
         invalidate()
     }
 
@@ -2028,7 +2051,8 @@ class PianoRollView @JvmOverloads constructor(
 
         val points = tempoPoints()
 
-        // Step line: each tempo holds until the next point.
+        // Step line: a tempo holds until the next point, or ramps linearly
+        // into it when the next point is marked as a ramp.
         if (points.isNotEmpty()) {
             strokePaint.color = withAlpha(colSelected, 0.9f)
             strokePaint.strokeWidth = dp(2f)
@@ -2038,9 +2062,15 @@ class PianoRollView @JvmOverloads constructor(
                 val x = tickToX(points[i].tick)
                 val y = bpmToY(points[i].bpm)
                 val clamped = x.coerceIn(contentLeft, contentRight)
-                if (clamped > prevX) {
-                    canvas.drawLine(prevX, prevY, clamped, prevY, strokePaint)
-                    canvas.drawLine(clamped, prevY, clamped, y, strokePaint)
+                if (points[i].ramp) {
+                    if (clamped > prevX) {
+                        canvas.drawLine(prevX, prevY, clamped, y, strokePaint)
+                    }
+                } else {
+                    if (clamped > prevX) {
+                        canvas.drawLine(prevX, prevY, clamped, prevY, strokePaint)
+                        canvas.drawLine(clamped, prevY, clamped, y, strokePaint)
+                    }
                 }
                 prevX = clamped
                 prevY = y
@@ -2051,7 +2081,8 @@ class PianoRollView @JvmOverloads constructor(
             strokePaint.strokeWidth = dp(1f)
         }
 
-        // Nodes: teal for the tick-0 base tempo, amber for changes.
+        // Nodes: teal for the tick-0 base tempo, amber for changes. Ramp
+        // nodes carry a ring so the curve type is readable at a glance.
         for (pt in points) {
             val nx = tickToX(pt.tick)
             if (nx < contentLeft - dp(6f) || nx > contentRight + dp(6f)) continue
@@ -2060,6 +2091,12 @@ class PianoRollView @JvmOverloads constructor(
             canvas.drawCircle(nx, ny, dp(5f), fillPaint)
             strokePaint.color = withAlpha(colBg, 0.9f)
             canvas.drawCircle(nx, ny, dp(5f), strokePaint)
+            if (pt.ramp) {
+                strokePaint.color = withAlpha(colSelected, 0.9f)
+                strokePaint.strokeWidth = dp(1.5f)
+                canvas.drawCircle(nx, ny, dp(8f), strokePaint)
+                strokePaint.strokeWidth = dp(1f)
+            }
         }
 
         // Drag preview node with its BPM.
@@ -2080,7 +2117,7 @@ class PianoRollView @JvmOverloads constructor(
             smallTextPaint.color = withAlpha(colDim, 0.85f)
             smallTextPaint.textSize = sp(9.5f)
             canvas.drawText(
-                "タップでテンポ変化を追加 ・ ノードをタップで削除 ・ ドラッグで移動",
+                "タップで追加 / ドラッグで移動 / 長押しでなめらか⇔一気に切替",
                 contentLeft + dp(70f),
                 laneTop + dp(26f),
                 smallTextPaint,

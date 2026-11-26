@@ -422,8 +422,9 @@ object MidiFile {
                     micros and 0xFF,
                 )
                 events += OutputEvent(0, 0, seq++, RawEvent(0, 0xFF, payload))
-                // Tempo changes edited in the tempo editor.
-                project.tempoChanges.sortedBy { it.tick }.forEach { tp ->
+                // Tempo changes edited in the tempo editor; ramp segments are
+                // expanded into fine steps because SMF has no ramp construct.
+                project.expandedTempoPoints().forEach { tp ->
                     if (tp.tick <= 0) return@forEach
                     val m = (60_000_000.0 / tp.bpm.coerceIn(1.0, 1000.0)).roundToInt()
                     events += OutputEvent(

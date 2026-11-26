@@ -542,6 +542,8 @@ private fun EditorScreen(
 
             override fun moveTempoPoint(fromTick: Int, toTick: Int, bpm: Double) =
                 vm.moveTempoPoint(fromTick, toTick, bpm)
+
+            override fun toggleTempoRamp(tick: Int) = vm.toggleTempoRamp(tick)
         }
     }
 

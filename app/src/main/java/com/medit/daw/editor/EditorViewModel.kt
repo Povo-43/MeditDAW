@@ -817,10 +817,29 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
             setTempoPoint(toTick, bpm)
             return
         }
+        // Keep the moved point's ramp flag.
+        val ramp = p.tempoChanges.firstOrNull { it.tick == fromTick }?.ramp ?: false
         commitTempoChanges(
             p,
             p.tempoChanges.filter { it.tick != fromTick && it.tick != toTick } +
-                TempoPoint(toTick, bpm.coerceIn(20.0, 400.0)),
+                TempoPoint(toTick, bpm.coerceIn(20.0, 400.0), ramp),
+        )
+    }
+
+    /** Toggles a tempo change between step (jump) and linear ramp. */
+    fun toggleTempoRamp(tick: Int) {
+        val p = _project.value ?: return
+        if (tick <= 0) return
+        val idx = p.tempoChanges.indexOfFirst { it.tick == tick }
+        if (idx < 0) return
+        val target = p.tempoChanges[idx]
+        commitTempoChanges(
+            p,
+            p.tempoChanges.toMutableList().also { it[idx] = target.copy(ramp = !target.ramp) },
+        )
+        postMessage(
+            if (!target.ramp) "ここまでテンポをなめらかに変化させます"
+            else "ここでテンポを一気に切り替えます"
         )
     }
 

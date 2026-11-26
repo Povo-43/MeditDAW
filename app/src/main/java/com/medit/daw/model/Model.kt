@@ -118,7 +118,12 @@ data class Track(
     fun sortedNotes(): List<Note> = notes.sortedWith(compareBy({ it.startTick }, { it.pitch }))
 }
 
-data class TempoPoint(val tick: Int, val bpm: Double)
+data class TempoPoint(
+    val tick: Int,
+    val bpm: Double,
+    /** True when the tempo ramps linearly from the previous point into this one. */
+    val ramp: Boolean = false,
+)
 
 class TempoMap(
     val ppq: Int,
@@ -333,9 +338,33 @@ data class Project(
     val notes: List<Note> get() = track.notes
 
     fun tempoMap(): TempoMap {
-        val points = mutableListOf(TempoPoint(0, bpm))
-        points.addAll(tempoChanges)
-        return TempoMap(ppq, points, bpm)
+        return TempoMap(ppq, expandedTempoPoints(), bpm)
+    }
+
+    /**
+     * The tempo curve as constant-BPM points: ramp segments are subdivided
+     * (about one point per quarter note) so playback, export and time
+     * conversions all follow the linear ramp without special cases.
+     */
+    fun expandedTempoPoints(): List<TempoPoint> {
+        val out = mutableListOf(TempoPoint(0, bpm))
+        var prev = TempoPoint(0, bpm)
+        for (c in tempoChanges.sortedBy { it.tick }) {
+            if (c.ramp && c.tick > prev.tick) {
+                val span = c.tick - prev.tick
+                val steps = (span / (ppq / 4.0)).toInt().coerceIn(2, 96)
+                for (i in 1 until steps) {
+                    val frac = i.toDouble() / steps
+                    out += TempoPoint(
+                        prev.tick + (span * frac).roundToInt(),
+                        prev.bpm + (c.bpm - prev.bpm) * frac,
+                    )
+                }
+            }
+            out += c
+            prev = c
+        }
+        return out
     }
 
     fun meterMap(): MeterMap {

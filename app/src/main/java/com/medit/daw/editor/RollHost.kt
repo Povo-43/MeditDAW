@@ -39,4 +39,6 @@ interface RollHost {
     fun removeTempoPoint(tick: Int)
     /** Moves the tempo change at [fromTick] to [toTick] with a new [bpm]. */
     fun moveTempoPoint(fromTick: Int, toTick: Int, bpm: Double)
+    /** Toggles a tempo change between step (jump) and linear ramp. */
+    fun toggleTempoRamp(tick: Int)
 }

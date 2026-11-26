@@ -162,7 +162,9 @@ object ProjectStore {
         if (p.tempoChanges.isNotEmpty()) {
             val tempos = JSONArray()
             p.tempoChanges.forEach { t ->
-                tempos.put(JSONObject().put("tick", t.tick).put("bpm", t.bpm))
+                val json = JSONObject().put("tick", t.tick).put("bpm", t.bpm)
+                if (t.ramp) json.put("ramp", true)
+                tempos.put(json)
             }
             project.put("tempoChanges", tempos)
         }
@@ -346,7 +348,9 @@ object ProjectStore {
                 val t = arr.optJSONObject(i) ?: continue
                 val tick = t.optInt("tick", 0)
                 val bpm = t.optDouble("bpm", 120.0)
-                if (tick > 0 && bpm in 10.0..1000.0) tempoChanges += TempoPoint(tick, bpm)
+                if (tick > 0 && bpm in 10.0..1000.0) {
+                    tempoChanges += TempoPoint(tick, bpm, t.optBoolean("ramp", false))
+                }
             }
         }
         if (tempoChanges.isEmpty()) {
