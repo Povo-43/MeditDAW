@@ -4,6 +4,7 @@ import com.medit.daw.model.MidiMeta
 import com.medit.daw.model.Note
 import com.medit.daw.model.Project
 import com.medit.daw.model.RawEvent
+import com.medit.daw.model.TempoPoint
 import com.medit.daw.model.TimeSignature
 import com.medit.daw.model.TimeSignaturePoint
 import com.medit.daw.model.Track
@@ -129,14 +130,37 @@ object MidiFile {
         val meterSpan = max(songEnd, ppq * 4 * firstSig.numerator)
         val loopEnd = ((meterSpan + ppq * 4 - 1) / (ppq * 4)) * ppq * 4
 
+        // Tempo changes move to the project level so the tempo editor can edit
+        // them; the raw meta events are stripped from the tracks.
+        val tempoChanges = mutableListOf<TempoPoint>()
+        val migratedTracks = trackModels.map { t ->
+            val tempoEvents = t.rawEvents.filter {
+                it.isMeta && it.metaType == 0x51 && it.tick > 0 && it.data.size >= 4
+            }
+            if (tempoEvents.isEmpty()) {
+                t
+            } else {
+                tempoEvents.forEach { e ->
+                    val micros = (e.data[1] shl 16) or (e.data[2] shl 8) or e.data[3]
+                    if (micros > 0) tempoChanges += TempoPoint(e.tick, 60_000_000.0 / micros)
+                }
+                t.copy(
+                    rawEvents = t.rawEvents.filterNot {
+                        it.isMeta && it.metaType == 0x51 && it.tick > 0 && it.data.size >= 4
+                    },
+                )
+            }
+        }
+
         val project = Project(
             title = title.ifBlank { "読み込んだ曲" },
             ppq = ppq,
-            tracks = trackModels,
+            tracks = migratedTracks,
             activeTrack = active,
             bpm = bpm,
             timeSignature = firstSig,
             timeSignatures = sigPoints,
+            tempoChanges = tempoChanges.sortedBy { it.tick },
             loopStartTick = 0,
             loopEndTick = max(loopEnd, ppq * 4),
             loopEnabled = false,
@@ -398,6 +422,18 @@ object MidiFile {
                     micros and 0xFF,
                 )
                 events += OutputEvent(0, 0, seq++, RawEvent(0, 0xFF, payload))
+                // Tempo changes edited in the tempo editor.
+                project.tempoChanges.sortedBy { it.tick }.forEach { tp ->
+                    if (tp.tick <= 0) return@forEach
+                    val m = (60_000_000.0 / tp.bpm.coerceIn(1.0, 1000.0)).roundToInt()
+                    events += OutputEvent(
+                        tp.tick, 0, seq++,
+                        RawEvent(
+                            tp.tick, 0xFF,
+                            intArrayOf(0x51, (m shr 16) and 0xFF, (m shr 8) and 0xFF, m and 0xFF),
+                        ),
+                    )
+                }
             }
             if (addTempoAndMeter) {
                 val sig = project.timeSignature

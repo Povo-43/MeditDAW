@@ -535,6 +535,13 @@ private fun EditorScreen(
 
             override fun removeSustainSegment(downTick: Int) =
                 vm.removeSustainSegment(vm.activeTrackIndex(), downTick)
+
+            override fun setTempoPoint(tick: Int, bpm: Double) = vm.setTempoPoint(tick, bpm)
+
+            override fun removeTempoPoint(tick: Int) = vm.removeTempoPoint(tick)
+
+            override fun moveTempoPoint(fromTick: Int, toTick: Int, bpm: Double) =
+                vm.moveTempoPoint(fromTick, toTick, bpm)
         }
     }
 
@@ -1974,6 +1981,15 @@ private fun ContextDock(
                 label = "ペダル",
                 active = ui.prefs.showSustainLane,
                 onClick = vm::toggleSustainLane,
+            )
+        )
+        add(
+            DockAction(
+                id = "tempoLane",
+                icon = Icons.Rounded.Speed,
+                label = "テンポ",
+                active = ui.prefs.showTempoLane,
+                onClick = vm::toggleTempoLane,
             )
         )
         add(

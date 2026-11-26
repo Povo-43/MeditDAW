@@ -33,4 +33,10 @@ interface RollHost {
     fun addSustainSegment(startTick: Int, endTick: Int)
     /** Removes the sustain segment whose pedal-down event sits at [downTick]. */
     fun removeSustainSegment(downTick: Int)
+    /** Adds or replaces the project-wide tempo change at [tick]. */
+    fun setTempoPoint(tick: Int, bpm: Double)
+    /** Removes the project-wide tempo change at [tick]. */
+    fun removeTempoPoint(tick: Int)
+    /** Moves the tempo change at [fromTick] to [toTick] with a new [bpm]. */
+    fun moveTempoPoint(fromTick: Int, toTick: Int, bpm: Double)
 }

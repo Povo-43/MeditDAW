@@ -27,6 +27,7 @@ import com.medit.daw.model.GridUnit
 import com.medit.daw.model.MeterMap
 import com.medit.daw.model.Note
 import com.medit.daw.model.Project
+import com.medit.daw.model.TempoPoint
 import com.medit.daw.model.isBlackKey
 import com.medit.daw.model.noteName
 import com.medit.daw.model.snapTick
@@ -174,6 +175,7 @@ class PianoRollView @JvmOverloads constructor(
         ERASE,
         VELOCITY_DRAG,
         SUSTAIN_DRAG,
+        TEMPO_DRAG,
     }
 
     private var mode = Mode.NONE
@@ -549,6 +551,10 @@ class PianoRollView @JvmOverloads constructor(
     private val velocityReserved: Float
         get() = if (prefs.velocityEditor) velocityLaneHeight else 0f
 
+    /** Bottom strip reserved for the pedal lane, when it is on. */
+    private val pedalReserved: Float
+        get() = if (prefs.showSustainLane) sustainLaneHeight else 0f
+
     private val sustainLaneTop: Float
         get() = contentBottom - velocityReserved - sustainLaneHeight
 
@@ -556,6 +562,52 @@ class PianoRollView @JvmOverloads constructor(
         prefs.showSustainLane && sustainLaneTop >= contentTop + dp(20f) &&
             x >= contentLeft && x <= contentRight &&
             y >= sustainLaneTop && y < contentBottom - velocityReserved
+
+    // ------------------------------------------------------------------
+    // Tempo editor lane (project-wide BPM curve).
+    // ------------------------------------------------------------------
+
+    private val bpmMin = 40.0
+    private val bpmMax = 240.0
+
+    /** Height of the tempo graph overlay, clamped so it stays usable. */
+    private val tempoLaneHeight: Float
+        get() = ((contentBottom - contentTop) * 0.26f).coerceIn(dp(80f), dp(140f))
+
+    private val tempoLaneBottom: Float
+        get() = contentBottom - velocityReserved - pedalReserved
+
+    private val tempoLaneTop: Float
+        get() = tempoLaneBottom - tempoLaneHeight
+
+    private fun tempoLaneContains(x: Float, y: Float): Boolean =
+        prefs.showTempoLane && tempoLaneTop >= contentTop + dp(20f) &&
+            x >= contentLeft && x <= contentRight &&
+            y >= tempoLaneTop && y < tempoLaneBottom
+
+    /** Base tempo at tick 0 plus every project-level tempo change. */
+    private fun tempoPoints(): List<TempoPoint> {
+        val p = project ?: return emptyList()
+        val out = ArrayList<TempoPoint>(p.tempoChanges.size + 1)
+        out += TempoPoint(0, p.bpm)
+        out.addAll(p.tempoChanges)
+        return out.sortedBy { it.tick }
+    }
+
+    private fun bpmToY(bpm: Double): Float {
+        val top = tempoLaneTop + dp(14f)
+        val bottom = tempoLaneBottom - dp(8f)
+        val frac = ((bpm.coerceIn(bpmMin, bpmMax) - bpmMin) / (bpmMax - bpmMin)).toFloat()
+        return bottom - frac * (bottom - top).coerceAtLeast(dp(1f))
+    }
+
+    private fun yToBpm(y: Float): Double {
+        val top = tempoLaneTop + dp(14f)
+        val bottom = tempoLaneBottom - dp(8f)
+        val span = (bottom - top).coerceAtLeast(dp(1f))
+        val frac = ((bottom - y) / span).coerceIn(0f, 1f)
+        return bpmMin + frac * (bpmMax - bpmMin)
+    }
 
     /** Segment whose span covers [tick], or null. */
     private fun sustainSegmentAt(tick: Int): Pair<Int, Int>? =
@@ -683,6 +735,7 @@ class PianoRollView @JvmOverloads constructor(
             }
             velocityLaneContains(downX, downY) -> beginVelocityTouch(event)
             sustainLaneContains(downX, downY) -> beginSustainTouch(event)
+            tempoLaneContains(downX, downY) -> beginTempoTouch(event)
             else -> beginRollTouch(event)
         }
         invalidate()
@@ -807,6 +860,68 @@ class PianoRollView @JvmOverloads constructor(
     }
 
     /**
+     * Tempo lane touch: tap empty space places a tempo change, tap a node
+     * removes it, dragging a node moves it (the tick-0 base point only moves
+     * vertically — the base tempo always applies from tick 0).
+     */
+    private fun beginTempoTouch(event: MotionEvent) {
+        mode = Mode.TEMPO_DRAG
+        tempoDragFromTick = findTempoNodeAt(event.x, event.y)?.tick ?: -1
+        tempoPreviewTick = xToTick(event.x).toInt().coerceAtLeast(0)
+        tempoPreviewBpm = yToBpm(event.y)
+        performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+    }
+
+    /** Tick of the node being dragged, -1 while creating a new one. */
+    private var tempoDragFromTick = -1
+    private var tempoPreviewTick = 0
+    private var tempoPreviewBpm = 0.0
+
+    private fun findTempoNodeAt(x: Float, y: Float): TempoPoint? {
+        val radius = dp(22f)
+        var best: TempoPoint? = null
+        var bestDistance = radius * radius
+        for (pt in tempoPoints()) {
+            val nx = tickToX(pt.tick)
+            if (nx < contentLeft - dp(6f) || nx > contentRight + dp(6f)) continue
+            val ny = bpmToY(pt.bpm)
+            val dx = x - nx
+            val dy = y - ny
+            val distance = dx * dx + dy * dy
+            if (distance <= bestDistance) {
+                bestDistance = distance
+                best = pt
+            }
+        }
+        return best
+    }
+
+    private fun updateTempoTouch(x: Float, y: Float) {
+        tempoPreviewTick = xToTick(x).toInt().coerceAtLeast(0)
+        tempoPreviewBpm = yToBpm(y)
+        invalidate()
+    }
+
+    private fun commitTempoTouch() {
+        val from = tempoDragFromTick
+        if (from >= 0) {
+            if (gestureMoved) {
+                // The base tempo (tick 0) only changes value, never position.
+                val target = if (from == 0) 0 else tempoPreviewTick
+                host?.moveTempoPoint(from, target, tempoPreviewBpm)
+            } else if (from > 0) {
+                host?.removeTempoPoint(from)
+            }
+        } else {
+            // Tap on empty lane: place a tempo change here.
+            host?.setTempoPoint(tempoPreviewTick, tempoPreviewBpm)
+        }
+        tempoDragFromTick = -1
+        tempoPreviewBpm = 0.0
+        invalidate()
+    }
+
+    /**
      * Pedal lane touch: tap toggles a segment under the finger, a horizontal
      * drag draws a new segment from the press point to the release point.
      */
@@ -900,6 +1015,7 @@ class PianoRollView @JvmOverloads constructor(
             }
             Mode.VELOCITY_DRAG -> applyVelocityDrag(y)
             Mode.SUSTAIN_DRAG -> updateSustainTouch(x)
+            Mode.TEMPO_DRAG -> updateTempoTouch(x, y)
             Mode.PAN -> applyPan(dx, dy)
             Mode.DRAW -> {
                 val tick = snapIfEnabled(xToTick(x).toInt()).coerceAtLeast(0)
@@ -992,6 +1108,7 @@ class PianoRollView @JvmOverloads constructor(
                 velocityDisplayVelocity = null
             }
             Mode.SUSTAIN_DRAG -> commitSustainTouch()
+            Mode.TEMPO_DRAG -> commitTempoTouch()
             Mode.DRAW -> {
                 val start = drawStartTick.coerceAtLeast(0)
                 val end = max(start + 1, drawEndTick)
@@ -1054,6 +1171,8 @@ class PianoRollView @JvmOverloads constructor(
         velocityDisplayPitch = null
         velocityDisplayVelocity = null
         sustainPreview = null
+        tempoDragFromTick = -1
+        tempoPreviewBpm = 0.0
         invalidate()
     }
 
@@ -1597,6 +1716,7 @@ class PianoRollView @JvmOverloads constructor(
         drawGhost(canvas, p)
         drawVelocityEditor(canvas, p)
         drawSustainLane(canvas, p)
+        drawTempoLane(canvas, p)
         drawPlayheadLine(canvas)
         drawMarquee(canvas)
         drawEmptyHint(canvas, p)
@@ -1866,6 +1986,103 @@ class PianoRollView @JvmOverloads constructor(
                 "タップでペダル追加 ・ ドラッグで範囲指定",
                 contentLeft + dp(70f),
                 laneTop + dp(13.5f),
+                smallTextPaint,
+            )
+        }
+    }
+
+    /**
+     * Tempo editor lane: a BPM graph over time in the same style as the
+     * velocity editor. Tap empty space to place a tempo change, tap a node to
+     * remove it, drag a node to move it. Tempo is project-wide.
+     */
+    private fun drawTempoLane(canvas: Canvas, p: Project) {
+        if (!prefs.showTempoLane) return
+        val laneTop = tempoLaneTop
+        if (laneTop < contentTop + dp(20f)) return
+        val laneBottom = tempoLaneBottom
+
+        fillPaint.color = withAlpha(colPanel, 0.94f)
+        canvas.drawRect(contentLeft, laneTop, contentRight, laneBottom, fillPaint)
+        strokePaint.color = withAlpha(colSelected, 0.45f)
+        strokePaint.strokeWidth = dp(1f)
+        canvas.drawLine(contentLeft, laneTop, contentRight, laneTop, strokePaint)
+
+        // BPM guides.
+        strokePaint.pathEffect = DashPathEffect(floatArrayOf(dp(3f), dp(5f)), 0f)
+        smallTextPaint.textAlign = Paint.Align.RIGHT
+        smallTextPaint.textSize = sp(8f)
+        for (bpm in intArrayOf(240, 180, 120, 60)) {
+            val y = bpmToY(bpm.toDouble())
+            strokePaint.color = withAlpha(colDim, if (bpm == 240 || bpm == 60) 0.32f else 0.16f)
+            canvas.drawLine(contentLeft, y, contentRight, y, strokePaint)
+            smallTextPaint.color = withAlpha(colDim, 0.75f)
+            canvas.drawText(bpm.toString(), contentRight - dp(6f), y - dp(2f), smallTextPaint)
+        }
+        strokePaint.pathEffect = null
+        smallTextPaint.textAlign = Paint.Align.LEFT
+
+        boldTextPaint.color = withAlpha(colText, 0.9f)
+        boldTextPaint.textSize = sp(9f)
+        canvas.drawText("TEMPO", contentLeft + dp(8f), laneTop + dp(13f), boldTextPaint)
+
+        val points = tempoPoints()
+
+        // Step line: each tempo holds until the next point.
+        if (points.isNotEmpty()) {
+            strokePaint.color = withAlpha(colSelected, 0.9f)
+            strokePaint.strokeWidth = dp(2f)
+            var prevX = tickToX(points.first().tick).coerceAtLeast(contentLeft)
+            var prevY = bpmToY(points.first().bpm)
+            for (i in 1 until points.size) {
+                val x = tickToX(points[i].tick)
+                val y = bpmToY(points[i].bpm)
+                val clamped = x.coerceIn(contentLeft, contentRight)
+                if (clamped > prevX) {
+                    canvas.drawLine(prevX, prevY, clamped, prevY, strokePaint)
+                    canvas.drawLine(clamped, prevY, clamped, y, strokePaint)
+                }
+                prevX = clamped
+                prevY = y
+            }
+            if (prevX < contentRight) {
+                canvas.drawLine(prevX, prevY, contentRight, prevY, strokePaint)
+            }
+            strokePaint.strokeWidth = dp(1f)
+        }
+
+        // Nodes: teal for the tick-0 base tempo, amber for changes.
+        for (pt in points) {
+            val nx = tickToX(pt.tick)
+            if (nx < contentLeft - dp(6f) || nx > contentRight + dp(6f)) continue
+            val ny = bpmToY(pt.bpm)
+            fillPaint.color = withAlpha(if (pt.tick == 0) colSelected else colNote, 0.95f)
+            canvas.drawCircle(nx, ny, dp(5f), fillPaint)
+            strokePaint.color = withAlpha(colBg, 0.9f)
+            canvas.drawCircle(nx, ny, dp(5f), strokePaint)
+        }
+
+        // Drag preview node with its BPM.
+        if (mode == Mode.TEMPO_DRAG && tempoPreviewBpm > 0.0) {
+            val px = tickToX(if (tempoDragFromTick == 0) 0 else tempoPreviewTick)
+            val py = bpmToY(tempoPreviewBpm)
+            fillPaint.color = withAlpha(colPlayhead, 0.9f)
+            canvas.drawCircle(px, py, dp(6f), fillPaint)
+            smallTextPaint.color = withAlpha(colText, 0.95f)
+            smallTextPaint.textSize = sp(9f)
+            canvas.drawText(
+                "${tempoPreviewBpm.roundToInt()}",
+                px + dp(9f),
+                py - dp(7f),
+                smallTextPaint,
+            )
+        } else if (points.size <= 1) {
+            smallTextPaint.color = withAlpha(colDim, 0.85f)
+            smallTextPaint.textSize = sp(9.5f)
+            canvas.drawText(
+                "タップでテンポ変化を追加 ・ ノードをタップで削除 ・ ドラッグで移動",
+                contentLeft + dp(70f),
+                laneTop + dp(26f),
                 smallTextPaint,
             )
         }

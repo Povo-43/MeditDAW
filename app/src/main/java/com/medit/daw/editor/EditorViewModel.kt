@@ -35,6 +35,7 @@ import com.medit.daw.model.Note
 import com.medit.daw.model.Project
 import com.medit.daw.model.RawEvent
 import com.medit.daw.model.TimeSignature
+import com.medit.daw.model.TempoPoint
 import com.medit.daw.model.TimeSignaturePoint
 import com.medit.daw.model.Track
 import com.medit.daw.model.noteName
@@ -262,6 +263,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         val bpm: Double,
         val timeSignature: TimeSignature,
         val timeSignatures: List<TimeSignaturePoint>,
+        val tempoChanges: List<TempoPoint>,
         val meta: MidiMeta,
     )
 
@@ -784,6 +786,50 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         playback.setProject(_project.value!!)
     }
 
+    // -----------------------------------------------------------------
+    // Tempo editor (project-wide tempo map)
+    // -----------------------------------------------------------------
+
+    /** Adds or replaces a tempo change at [tick] (tick > 0). */
+    fun setTempoPoint(tick: Int, bpm: Double) {
+        val p = _project.value ?: return
+        if (tick <= 0) return
+        commitTempoChanges(
+            p,
+            p.tempoChanges.filter { it.tick != tick } +
+                TempoPoint(tick, bpm.coerceIn(20.0, 400.0)),
+        )
+    }
+
+    /** Removes the tempo change at [tick]. */
+    fun removeTempoPoint(tick: Int) {
+        val p = _project.value ?: return
+        if (tick <= 0) return
+        if (p.tempoChanges.none { it.tick == tick }) return
+        commitTempoChanges(p, p.tempoChanges.filter { it.tick != tick })
+    }
+
+    /** Moves a tempo change from [fromTick] to [toTick] with a new [bpm]. */
+    fun moveTempoPoint(fromTick: Int, toTick: Int, bpm: Double) {
+        val p = _project.value ?: return
+        if (fromTick <= 0 || toTick <= 0) return
+        if (fromTick == toTick) {
+            setTempoPoint(toTick, bpm)
+            return
+        }
+        commitTempoChanges(
+            p,
+            p.tempoChanges.filter { it.tick != fromTick && it.tick != toTick } +
+                TempoPoint(toTick, bpm.coerceIn(20.0, 400.0)),
+        )
+    }
+
+    private fun commitTempoChanges(p: Project, changes: List<TempoPoint>) {
+        pushUndo()
+        _project.value = p.copy(tempoChanges = changes.sortedBy { it.tick })
+        playback.setProject(_project.value!!)
+    }
+
     fun setTimeSignature(numerator: Int, denominator: Int) {
         val p = _project.value ?: return
         val sig = runCatching { TimeSignature(numerator, denominator) }.getOrNull() ?: return
@@ -930,6 +976,11 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     /** Shows/hides the sustain pedal lane under the piano roll. */
     fun toggleSustainLane() {
         _prefs.value = _prefs.value.copy(showSustainLane = !_prefs.value.showSustainLane)
+    }
+
+    /** Shows/hides the tempo editor lane under the piano roll. */
+    fun toggleTempoLane() {
+        _prefs.value = _prefs.value.copy(showTempoLane = !_prefs.value.showTempoLane)
     }
 
     /**
@@ -2150,6 +2201,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         bpm = p.bpm,
         timeSignature = p.timeSignature,
         timeSignatures = p.timeSignatures,
+        tempoChanges = p.tempoChanges,
         meta = p.meta,
     )
 
@@ -2159,6 +2211,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
             bpm = snapshot.bpm,
             timeSignature = snapshot.timeSignature,
             timeSignatures = snapshot.timeSignatures,
+            tempoChanges = snapshot.tempoChanges,
             meta = snapshot.meta,
         ).withActiveNotes(snapshot.notes)
         _project.value = updated

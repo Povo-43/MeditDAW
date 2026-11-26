@@ -320,6 +320,8 @@ data class Project(
     val bpm: Double,
     val timeSignature: TimeSignature,
     val timeSignatures: List<TimeSignaturePoint> = emptyList(),
+    /** Project-wide tempo changes (tick > 0); the base tempo is [bpm] at tick 0. */
+    val tempoChanges: List<TempoPoint> = emptyList(),
     val loopStartTick: Int = 0,
     val loopEndTick: Int = 0,
     val loopEnabled: Boolean = false,
@@ -332,14 +334,7 @@ data class Project(
 
     fun tempoMap(): TempoMap {
         val points = mutableListOf(TempoPoint(0, bpm))
-        for (t in tracks) {
-            for (e in t.rawEvents) {
-                if (e.isMeta && e.metaType == 0x51 && e.data.size >= 4 && e.tick > 0) {
-                    val micros = (e.data[1] shl 16) or (e.data[2] shl 8) or e.data[3]
-                    if (micros > 0) points.add(TempoPoint(e.tick, 60_000_000.0 / micros))
-                }
-            }
-        }
+        points.addAll(tempoChanges)
         return TempoMap(ppq, points, bpm)
     }
 

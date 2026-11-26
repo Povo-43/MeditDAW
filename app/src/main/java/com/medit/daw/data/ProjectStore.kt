@@ -6,6 +6,7 @@ import com.medit.daw.model.MidiMeta
 import com.medit.daw.model.Note
 import com.medit.daw.model.Project
 import com.medit.daw.model.RawEvent
+import com.medit.daw.model.TempoPoint
 import com.medit.daw.model.TimeSignature
 import com.medit.daw.model.TimeSignaturePoint
 import com.medit.daw.model.Track
@@ -36,6 +37,8 @@ data class EditorPrefs(
     val fingerEditing: Boolean = true,
     val penOnlySelection: Boolean = false,
     val showSustainLane: Boolean = true,
+    /** Shows the editable tempo graph overlaid on the lower part of the roll. */
+    val showTempoLane: Boolean = true,
     /** Shows the editable velocity graph overlaid on the lower part of the roll. */
     val velocityEditor: Boolean = false,
     /**
@@ -156,6 +159,13 @@ object ProjectStore {
             sigs.put(JSONObject().put("tick", s.tick).put("n", s.signature.numerator).put("d", s.signature.denominator))
         }
         project.put("timeSignatures", sigs)
+        if (p.tempoChanges.isNotEmpty()) {
+            val tempos = JSONArray()
+            p.tempoChanges.forEach { t ->
+                tempos.put(JSONObject().put("tick", t.tick).put("bpm", t.bpm))
+            }
+            project.put("tempoChanges", tempos)
+        }
         project.put("loopStart", p.loopStartTick)
         project.put("loopEnd", p.loopEndTick)
         project.put("loopEnabled", p.loopEnabled)
@@ -219,6 +229,7 @@ object ProjectStore {
         json.put("fingerEditing", prefs.fingerEditing)
         json.put("penOnlySelection", prefs.penOnlySelection)
         json.put("showSustainLane", prefs.showSustainLane)
+        json.put("showTempoLane", prefs.showTempoLane)
         json.put("velocityEditor", prefs.velocityEditor)
         json.put("soundFontVolume", prefs.soundFontVolume.toDouble())
         return json
@@ -326,6 +337,40 @@ object ProjectStore {
             }
         }
         if (sigs.isEmpty()) sigs += TimeSignaturePoint(0, timeSig)
+        // Tempo changes: read from the project-level list; older saves kept
+        // them as FF 51 meta events inside the tracks — migrate those out so
+        // the tempo editor sees every change.
+        val tempoChanges = mutableListOf<TempoPoint>()
+        p.optJSONArray("tempoChanges")?.let { arr ->
+            for (i in 0 until arr.length()) {
+                val t = arr.optJSONObject(i) ?: continue
+                val tick = t.optInt("tick", 0)
+                val bpm = t.optDouble("bpm", 120.0)
+                if (tick > 0 && bpm in 10.0..1000.0) tempoChanges += TempoPoint(tick, bpm)
+            }
+        }
+        if (tempoChanges.isEmpty()) {
+            val migratedTracks = tracks.map { t ->
+                val tempoEvents = t.rawEvents.filter {
+                    it.isMeta && it.metaType == 0x51 && it.tick > 0 && it.data.size >= 4
+                }
+                if (tempoEvents.isEmpty()) {
+                    t
+                } else {
+                    tempoEvents.forEach { e ->
+                        val micros = (e.data[1] shl 16) or (e.data[2] shl 8) or e.data[3]
+                        if (micros > 0) tempoChanges += TempoPoint(e.tick, 60_000_000.0 / micros)
+                    }
+                    t.copy(
+                        rawEvents = t.rawEvents.filterNot {
+                            it.isMeta && it.metaType == 0x51 && it.tick > 0 && it.data.size >= 4
+                        },
+                    )
+                }
+            }
+            tracks.clear()
+            tracks.addAll(migratedTracks)
+        }
         val notes = tracks.flatMap { it.notes }
         val project = Project(
             title = p.optString("title", "無題"),
@@ -335,6 +380,7 @@ object ProjectStore {
             bpm = p.optDouble("bpm", 120.0).takeIf { it in 10.0..1000.0 } ?: 120.0,
             timeSignature = timeSig,
             timeSignatures = sigs.sortedBy { it.tick },
+            tempoChanges = tempoChanges.sortedBy { it.tick },
             loopStartTick = p.optInt("loopStart", 0).coerceAtLeast(0),
             loopEndTick = p.optInt("loopEnd", ppq * 16).coerceAtLeast(1),
             loopEnabled = p.optBoolean("loopEnabled", false),
@@ -372,6 +418,7 @@ object ProjectStore {
             fingerEditing = json.optBoolean("fingerEditing", true),
             penOnlySelection = json.optBoolean("penOnlySelection", false),
             showSustainLane = json.optBoolean("showSustainLane", true),
+            showTempoLane = json.optBoolean("showTempoLane", true),
             velocityEditor = json.optBoolean("velocityEditor", false),
             soundFontVolume = json.optDouble("soundFontVolume", 1.0)
                 .takeUnless { it.isNaN() }?.toFloat()?.coerceIn(0f, 2f) ?: 1f,
