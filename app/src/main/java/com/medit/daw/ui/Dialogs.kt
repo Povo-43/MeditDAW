@@ -34,6 +34,8 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Audiotrack
 import androidx.compose.material.icons.rounded.BarChart
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Keyboard
+import androidx.compose.material.icons.rounded.Piano
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Delete
@@ -1151,14 +1153,35 @@ fun HelpDialog(onDismiss: () -> Unit) {
         )
         Spacer(Modifier.height(12.dp))
         HelpSection(
-            "キーボード / MIDI入力",
-            Icons.Rounded.Tune,
+            "物理キーボードで演奏",
+            Icons.Rounded.Piano,
             listOf(
-                "スペース: 再生/一時停止。R: MIDI入力の録音 ON/OFF。L: ループ。Esc: 停止/選択解除。",
+                "A S D F G H J K がドレミファソラシド (C4〜B4)、W E T Y U が黒鍵です。",
+                "K O L P ; は1オクターブ上。Z / X でオクターブを下げ / 上げます (-2〜+2)。",
+                "押した長さどおりのノートが記録されます (MIDI入力がアーム中は録音、未アームでも試聴できます)。",
+                "一時停止中でも、鍵盤を弾いた順にノートが時間順に並んで記録されます。",
+            ),
+        )
+        Spacer(Modifier.height(12.dp))
+        HelpSection(
+            "キーボードショートカット",
+            Icons.Rounded.Keyboard,
+            listOf(
+                "スペース: 再生/一時停止。R: MIDI入力の録音 ON/OFF。Ctrl+L: ループ。Esc: 停止/選択解除。",
                 "Ctrl+Z / Ctrl+Shift+Z: 元に戻す / やり直す。Ctrl+C / X / V: コピー / カット / 貼り付け。",
                 "Ctrl+A: 全選択。Ctrl+D: 複製。Delete: 選択を削除。Ctrl+S: 保存。Ctrl+Shift+S: 共有。",
-                "矢印: 選択ノートを移動 / 移調 (Shiftでオクターブ)。Ctrl+Tab: タブ切替。Ctrl+= / Ctrl+- / Ctrl+0: ズーム / 全体表示。",
-                "USB / Bluetooth LE MIDIキーボードは自動で接続されます。再生しながら弾くと再生位置に録音されます。",
+                "矢印: 選択ノートを移動 / 移調 (Shiftでオクターブ)。未選択時は再生位置をグリッド刻みで移動。",
+                "Ctrl+Tab: タブ切替。Ctrl+= / Ctrl+- / Ctrl+0: ズーム / 全体表示。Home: 先頭へ。",
+            ),
+        )
+        Spacer(Modifier.height(12.dp))
+        HelpSection(
+            "MIDIキーボード入力",
+            Icons.Rounded.Piano,
+            listOf(
+                "USB / Bluetooth LE MIDIキーボードは自動で接続されます。",
+                "R でMIDI入力をアームしてから弾くと録音されます (停止中は弾いた位置から時間順に記録)。",
+                "アーム中はダンパーペダル (CC64) も記録・再生されます。",
             ),
         )
     }

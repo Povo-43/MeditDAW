@@ -67,6 +67,12 @@ class MainActivity : ComponentActivity() {
         return super.onKeyDown(keyCode, event)
     }
 
+    /** Physical piano keys: the matching key-up releases the held note. */
+    override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean {
+        if (vm.onPianoKeyUp(keyCode)) return true
+        return super.onKeyUp(keyCode, event)
+    }
+
     override fun onStop() {
         vm.onBackground()
         super.onStop()

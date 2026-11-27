@@ -1959,6 +1959,79 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     // ---------------------------------------------------------------------
+    // Playing notes from the physical keyboard
+    // ---------------------------------------------------------------------
+
+    /**
+     * Key-code → semitone offset from C, the DAW-standard two-row mapping
+     * (A W S E D F T G Y H U J = one octave, K O L P ; = the next).
+     */
+    private fun pianoSemitone(keyCode: Int): Int? = when (keyCode) {
+        KeyEvent.KEYCODE_A -> 0
+        KeyEvent.KEYCODE_W -> 1
+        KeyEvent.KEYCODE_S -> 2
+        KeyEvent.KEYCODE_E -> 3
+        KeyEvent.KEYCODE_D -> 4
+        KeyEvent.KEYCODE_F -> 5
+        KeyEvent.KEYCODE_T -> 6
+        KeyEvent.KEYCODE_G -> 7
+        KeyEvent.KEYCODE_Y -> 8
+        KeyEvent.KEYCODE_H -> 9
+        KeyEvent.KEYCODE_U -> 10
+        KeyEvent.KEYCODE_J -> 11
+        KeyEvent.KEYCODE_K -> 12
+        KeyEvent.KEYCODE_O -> 13
+        KeyEvent.KEYCODE_L -> 14
+        KeyEvent.KEYCODE_P -> 15
+        KeyEvent.KEYCODE_SEMICOLON -> 16
+        else -> null
+    }
+
+    /** Octave shift applied by Z / X, in octaves from C4. */
+    private var pianoOctave = 0
+    /** Held piano keys: key-code → the pitch the key went down with. */
+    private val heldPianoKeys = HashMap<Int, Int>()
+
+    private fun isPianoKey(keyCode: Int): Boolean =
+        keyCode == KeyEvent.KEYCODE_Z || keyCode == KeyEvent.KEYCODE_X ||
+            pianoSemitone(keyCode) != null
+
+    /** Plays (and, while armed, records) a note from a physical key press. */
+    fun onPianoKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+        when (keyCode) {
+            KeyEvent.KEYCODE_Z -> {
+                if (event.repeatCount == 0) pianoOctave = (pianoOctave - 1).coerceIn(-2, 2)
+                return true
+            }
+            KeyEvent.KEYCODE_X -> {
+                if (event.repeatCount == 0) pianoOctave = (pianoOctave + 1).coerceIn(-2, 2)
+                return true
+            }
+        }
+        val semitone = pianoSemitone(keyCode) ?: return false
+        if (event.repeatCount > 0) return true
+        if (heldPianoKeys.containsKey(keyCode)) return true
+        val pitch = (60 + pianoOctave * 12 + semitone).coerceIn(0, 127)
+        heldPianoKeys[keyCode] = pitch
+        onHardwareNoteOn(pitch, _prefs.value.inputVelocity)
+        return true
+    }
+
+    /** Releases the note a physical piano key started. */
+    fun onPianoKeyUp(keyCode: Int): Boolean {
+        val pitch = heldPianoKeys.remove(keyCode) ?: return false
+        onHardwareNoteOff(pitch)
+        return true
+    }
+
+    /** Releases every key-held note (app backgrounded, window lost, …). */
+    private fun releaseHeldPianoKeys() {
+        val pitches = heldPianoKeys.values.toList()
+        heldPianoKeys.clear()
+        pitches.forEach { onHardwareNoteOff(it) }
+    }
+
+    // ---------------------------------------------------------------------
     // External keyboard shortcuts
     // ---------------------------------------------------------------------
 
@@ -1984,6 +2057,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                 KeyEvent.KEYCODE_O -> { requestImport(); true }
                 KeyEvent.KEYCODE_E -> { requestExport(); true }
                 KeyEvent.KEYCODE_P -> { openProjectBrowser(); true }
+                KeyEvent.KEYCODE_L -> { toggleLoop(); true }
                 KeyEvent.KEYCODE_EQUALS, KeyEvent.KEYCODE_PLUS -> {
                     _viewCommands.tryEmit(ViewCommand.ZoomIn); true
                 }
@@ -1995,23 +2069,41 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                 else -> false
             }
         }
+        // Plain letter keys play the piano (Z/X shift the octave).
+        if (isPianoKey(keyCode)) return onPianoKeyDown(keyCode, event)
         return when (keyCode) {
             KeyEvent.KEYCODE_SPACE -> {
                 if (event.repeatCount == 0) togglePlayback()
                 true
             }
             KeyEvent.KEYCODE_R -> { toggleMidiRecording(); true }
-            KeyEvent.KEYCODE_L -> { toggleLoop(); true }
             KeyEvent.KEYCODE_ESCAPE -> { escapeAction(); true }
             KeyEvent.KEYCODE_HOME -> { seekTo(0.0); true }
             KeyEvent.KEYCODE_DEL, KeyEvent.KEYCODE_FORWARD_DEL ->
                 _selection.value.isNotEmpty().also { if (it) deleteSelection() }
-            KeyEvent.KEYCODE_DPAD_LEFT -> nudgeSelection(-1, 0)
-            KeyEvent.KEYCODE_DPAD_RIGHT -> nudgeSelection(1, 0)
+            KeyEvent.KEYCODE_DPAD_LEFT -> {
+                if (_selection.value.isNotEmpty()) nudgeSelection(-1, 0)
+                else seekByGrid(-1)
+                true
+            }
+            KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                if (_selection.value.isNotEmpty()) nudgeSelection(1, 0)
+                else seekByGrid(1)
+                true
+            }
             KeyEvent.KEYCODE_DPAD_UP -> nudgeSelection(0, if (shift) 12 else 1)
             KeyEvent.KEYCODE_DPAD_DOWN -> nudgeSelection(0, if (shift) -12 else -1)
             else -> false
         }
+    }
+
+    /** Moves the playhead by one grid step (or a quarter note when snap is off). */
+    private fun seekByGrid(direction: Int) {
+        val p = _project.value ?: return
+        val grid = _prefs.value.grid
+        val step = if (grid.isGrid) grid.ticks(p.ppq) else (p.ppq / 4).coerceAtLeast(1)
+        val next = (playheadTick().toInt() + direction * step).coerceAtLeast(0)
+        seekTo(next.toDouble())
     }
 
     fun cycleTab(delta: Int) {
@@ -2061,6 +2153,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun onBackground() {
+        releaseHeldPianoKeys()
         playback.pause()
         midiInput.sendAllNotesOff()
         audio.allNotesOffAll()
