@@ -37,6 +37,7 @@ import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
+import com.medit.daw.R
 
 /**
  * Tablet-first piano roll.
@@ -390,7 +391,7 @@ class PianoRollView @JvmOverloads constructor(
     /**
      * Fits the whole song into the roll: horizontal zoom covers the last note
      * plus a little breathing room, vertical zoom covers the used pitch range
-     * with padding. Used by the "全体表示" dock button.
+     * with padding. Used by the context.getString(R.string.roll_fit_all) dock button.
      */
     fun fitToSong() {
         val p = project ?: return
@@ -1725,7 +1726,7 @@ class PianoRollView @JvmOverloads constructor(
         if (p == null) {
             textPaint.color = colDim
             textPaint.textAlign = Paint.Align.CENTER
-            canvas.drawText("読み込み中…", width / 2f, height / 2f, textPaint)
+            canvas.drawText(context.getString(R.string.common_loading), width / 2f, height / 2f, textPaint)
             textPaint.textAlign = Paint.Align.LEFT
             return
         }
@@ -1976,7 +1977,7 @@ class PianoRollView @JvmOverloads constructor(
 
         boldTextPaint.color = withAlpha(colText, 0.85f)
         boldTextPaint.textSize = sp(9f)
-        canvas.drawText("PEDAL", contentLeft + dp(8f), laneTop + dp(12f), boldTextPaint)
+        canvas.drawText(context.getString(R.string.roll_label_pedal), contentLeft + dp(8f), laneTop + dp(12f), boldTextPaint)
 
         // Visible segments plus the in-progress drag preview.
         val segments = ArrayList(sustainSegments())
@@ -2006,7 +2007,7 @@ class PianoRollView @JvmOverloads constructor(
             smallTextPaint.color = withAlpha(colDim, 0.8f)
             smallTextPaint.textSize = sp(9f)
             canvas.drawText(
-                "タップでペダル追加 ・ ドラッグで範囲指定",
+                context.getString(R.string.roll_pedal_hint),
                 contentLeft + dp(70f),
                 laneTop + dp(13.5f),
                 smallTextPaint,
@@ -2047,7 +2048,7 @@ class PianoRollView @JvmOverloads constructor(
 
         boldTextPaint.color = withAlpha(colText, 0.9f)
         boldTextPaint.textSize = sp(9f)
-        canvas.drawText("TEMPO", contentLeft + dp(8f), laneTop + dp(13f), boldTextPaint)
+        canvas.drawText(context.getString(R.string.roll_label_tempo), contentLeft + dp(8f), laneTop + dp(13f), boldTextPaint)
 
         val points = tempoPoints()
 
@@ -2117,7 +2118,7 @@ class PianoRollView @JvmOverloads constructor(
             smallTextPaint.color = withAlpha(colDim, 0.85f)
             smallTextPaint.textSize = sp(9.5f)
             canvas.drawText(
-                "タップで追加 / ドラッグで移動 / 長押しでなめらか⇔一気に切替",
+                context.getString(R.string.roll_tempo_hint),
                 contentLeft + dp(70f),
                 laneTop + dp(26f),
                 smallTextPaint,
@@ -2153,7 +2154,7 @@ class PianoRollView @JvmOverloads constructor(
 
         boldTextPaint.color = withAlpha(colText, 0.9f)
         boldTextPaint.textSize = sp(9f)
-        canvas.drawText("VELOCITY", contentLeft + dp(8f), laneTop + dp(13f), boldTextPaint)
+        canvas.drawText(context.getString(R.string.roll_label_velocity), contentLeft + dp(8f), laneTop + dp(13f), boldTextPaint)
 
         val notes = (velocityPreview ?: p.notes)
             .filter {
@@ -2166,9 +2167,9 @@ class PianoRollView @JvmOverloads constructor(
             smallTextPaint.color = withAlpha(colDim, 0.85f)
             smallTextPaint.textSize = sp(9.5f)
             val hint = if (p.notes.isEmpty()) {
-                "ノートを追加すると、ここでベロシティを編集できます"
+                context.getString(R.string.roll_vel_empty_hint)
             } else {
-                "表示範囲にノートがありません"
+                context.getString(R.string.roll_no_notes)
             }
             canvas.drawText(hint, contentLeft + dp(10f), laneTop + dp(31f), smallTextPaint)
             return
@@ -2539,10 +2540,10 @@ class PianoRollView @JvmOverloads constructor(
         textPaint.color = withAlpha(colDim, 0.85f)
         textPaint.textAlign = Paint.Align.CENTER
         textPaint.textSize = sp(13f)
-        canvas.drawText("タップで音符を追加", cx, cy - dp(8f), textPaint)
+        canvas.drawText(context.getString(R.string.roll_tap_to_add), cx, cy - dp(8f), textPaint)
         textPaint.textSize = sp(11f)
         textPaint.color = withAlpha(colFaint, 0.95f)
-        canvas.drawText("ペンでドラッグして長さを指定 / 2本指でスクロール・ズーム", cx, cy + dp(14f), textPaint)
+        canvas.drawText(context.getString(R.string.roll_pen_hint), cx, cy + dp(14f), textPaint)
         textPaint.textAlign = Paint.Align.LEFT
     }
 

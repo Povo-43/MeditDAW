@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import com.medit.daw.R
 
 /**
  * A device that can be used as a MIDI source. Only devices with an output port
@@ -251,6 +252,6 @@ class MidiInputManager(context: Context) {
             .filter { it.isNotBlank() }
             .joinToString(" ")
         if (combined.isNotBlank()) return combined
-        return if (info.type == MidiDeviceInfo.TYPE_BLUETOOTH) "Bluetooth MIDI" else "MIDIデバイス"
+        return if (info.type == MidiDeviceInfo.TYPE_BLUETOOTH) "Bluetooth MIDI" else appContext.getString(R.string.midi_device_name)
     }
 }

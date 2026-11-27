@@ -1,6 +1,7 @@
 package com.medit.daw.audio
 
 import android.content.Context
+import com.medit.daw.R
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -32,8 +33,8 @@ sealed interface Sf2Source {
         const val BUNDLED_KEY = "bundled"
 
         /** Display name shown in the UI for a source. */
-        fun displayName(source: Sf2Source): String = when (source) {
-            Bundled -> "内蔵ピアノ"
+        fun displayName(source: Sf2Source, context: android.content.Context): String = when (source) {
+            Bundled -> context.getString(R.string.panel_sound_bundled)
             is Sf2Source.File -> java.io.File(source.path).nameWithoutExtension
         }
     }
@@ -105,7 +106,8 @@ class MultiAudioEngine(private val context: Context) {
         return library.map { (key, bank) ->
             LibraryFont(
                 key = key,
-                name = if (key == Sf2Source.BUNDLED_KEY) "内蔵ピアノ"
+                name = if (key == Sf2Source.BUNDLED_KEY)
+                    context.getString(R.string.panel_sound_bundled)
                 else bank.name.ifBlank { key.substringAfterLast('/') },
                 presetCount = bank.presets.size,
                 isBundled = key == Sf2Source.BUNDLED_KEY,
@@ -147,7 +149,7 @@ class MultiAudioEngine(private val context: Context) {
         } catch (t: Throwable) {
             postStatus(
                 trackIndex,
-                TrackAudioStatus.Failed(trackIndex, "音源を読み込めません: ${t.message ?: t.javaClass.simpleName}")
+                TrackAudioStatus.Failed(trackIndex, context.getString(R.string.msg_sound_load_failed, t.message ?: t.javaClass.simpleName))
             )
             return
         }
@@ -159,7 +161,7 @@ class MultiAudioEngine(private val context: Context) {
         val newSynth = try {
             PianoSynth(font)
         } catch (t: Throwable) {
-            postStatus(trackIndex, TrackAudioStatus.Failed(trackIndex, "オーディオを初期化できません: ${t.message ?: t.javaClass.simpleName}"))
+            postStatus(trackIndex, TrackAudioStatus.Failed(trackIndex, context.getString(R.string.msg_audio_init_failed, t.message ?: t.javaClass.simpleName)))
             return
         }
         newSynth.setMasterVolume(userVolume)
@@ -171,7 +173,7 @@ class MultiAudioEngine(private val context: Context) {
             trackIndex,
             TrackAudioStatus.Ready(
                 trackIndex,
-                Sf2Source.displayName(source),
+                Sf2Source.displayName(source, context),
                 font.activePreset()?.name ?: "Preset",
                 font.regionCount,
             )
@@ -207,7 +209,7 @@ class MultiAudioEngine(private val context: Context) {
             trackIndex,
             TrackAudioStatus.Ready(
                 trackIndex,
-                source?.let { Sf2Source.displayName(it) } ?: font.name,
+                source?.let { Sf2Source.displayName(it, context) } ?: font.name,
                 font.activePreset()?.name ?: "Preset",
                 font.regionCount,
             )

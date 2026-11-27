@@ -67,6 +67,7 @@ import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
+import com.medit.daw.R
 
 // Only guards against runaway copies; the real ceiling for a bank is its
 // decoded sample size, which SoundFontLoader derives from the app heap.
@@ -546,7 +547,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         val p = _project.value ?: return
         val ids = _selection.value
         if (ids.isEmpty()) {
-            postMessage("削除するノートを選択してください")
+            postMessage(app.getString(R.string.msg_select_for_delete))
             return
         }
         pushUndo()
@@ -570,7 +571,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         val p = _project.value ?: return
         if (p.noteById(id) == null) return
         deleteNotes(setOf(id))
-        postMessage("ノートを削除しました（元に戻すで復元できます）")
+        postMessage(app.getString(R.string.msg_notes_deleted))
     }
 
     fun selectAll() {
@@ -589,12 +590,12 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     fun copySelection() {
         val selected = selectedNotes()
         if (selected.isEmpty()) {
-            postMessage("コピーするノートを選択してください")
+            postMessage(app.getString(R.string.msg_select_for_copy))
             return
         }
         clipboardBaseTick = selected.minOf { it.startTick }
         clipboard = selected.map { it.copy(startTick = it.startTick - clipboardBaseTick) }
-        postMessage("${clipboard.size} 個のノートをコピーしました")
+        postMessage(app.getString(R.string.msg_copied, clipboard.size))
     }
 
     fun cutSelection() {
@@ -606,7 +607,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     fun pasteAtPlayhead() {
         val p = _project.value ?: return
         if (clipboard.isEmpty()) {
-            postMessage("コピーしたノートがありません")
+            postMessage(app.getString(R.string.msg_clipboard_empty))
             return
         }
         val at = snapIfNeeded(playback.currentTick().toInt().coerceAtLeast(0))
@@ -628,7 +629,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         val p = _project.value ?: return
         val selected = selectedNotes()
         if (selected.isEmpty()) {
-            postMessage("複製するノートを選択してください")
+            postMessage(app.getString(R.string.msg_select_for_duplicate))
             return
         }
         val step = duplicateStepTicks(p)
@@ -656,7 +657,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         val p = _project.value ?: return
         val selected = selectedNotes()
         if (selected.isEmpty()) {
-            postMessage("移調するノートを選択してください")
+            postMessage(app.getString(R.string.msg_select_for_transpose))
             return
         }
         val ids = selected.mapTo(HashSet()) { it.id }
@@ -748,7 +749,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     fun quantizeSelection() {
         val ids = _selection.value
         if (ids.isEmpty()) {
-            postMessage("クオンタイズするノートを選択してください")
+            postMessage(app.getString(R.string.msg_select_for_quantize))
             return
         }
         quantize(ids)
@@ -763,7 +764,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         if (ids.isEmpty()) return
         val grid = _prefs.value.grid
         if (grid == GridUnit.OFF) {
-            postMessage("クオンタイズにはスナップ間隔が必要です")
+            postMessage(app.getString(R.string.msg_snap_needed))
             return
         }
         val notes = p.notes.map { n ->
@@ -774,7 +775,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         }
         pushUndo()
         applyNotes(notes, p)
-        postMessage("${ids.size} 個のノートをクオンタイズしました")
+        postMessage(app.getString(R.string.msg_quantized, ids.size))
     }
 
     fun setBpm(bpm: Double) {
@@ -838,8 +839,8 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
             p.tempoChanges.toMutableList().also { it[idx] = target.copy(ramp = !target.ramp) },
         )
         postMessage(
-            if (!target.ramp) "ここまでテンポをなめらかに変化させます"
-            else "ここでテンポを一気に切り替えます"
+            if (!target.ramp) app.getString(R.string.msg_tempo_ramp_on)
+            else app.getString(R.string.msg_tempo_ramp_off)
         )
     }
 
@@ -888,7 +889,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     fun loopFromSelection() {
         val selected = selectedNotes()
         if (selected.isEmpty()) {
-            postMessage("ループ範囲にするノートを選択してください")
+            postMessage(app.getString(R.string.msg_select_for_loop))
             return
         }
         val p = _project.value ?: return
@@ -896,7 +897,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         val end = snapIfNeeded(selected.maxOf { it.endTick }.coerceAtLeast(start + 1))
         _project.value = p.copy(loopStartTick = start, loopEndTick = end, loopEnabled = true)
         playback.setProject(_project.value!!)
-        postMessage("選択範囲をループに設定しました")
+        postMessage(app.getString(R.string.msg_loop_set))
     }
 
     fun play() {
@@ -904,11 +905,11 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         val ti = activeTrackIndex()
         when (val status = audio.statuses.value.getOrDefault(ti, TrackAudioStatus.Loading)) {
             is TrackAudioStatus.Loading -> {
-                postMessage("ピアノ音源を読み込み中です")
+                postMessage(app.getString(R.string.msg_piano_loading))
                 return
             }
             is TrackAudioStatus.Failed -> {
-                postMessage("音源エラー: ${status.message}")
+                postMessage(app.getString(R.string.msg_sound_error, status.message))
                 return
             }
             is TrackAudioStatus.Ready -> Unit
@@ -1026,7 +1027,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         redoStack.addLast(snapshotOf(p))
         restoreSnapshot(snapshot)
         updateHistoryCounts()
-        postMessage("元に戻しました")
+        postMessage(app.getString(R.string.msg_undo))
     }
 
     fun redo() {
@@ -1035,7 +1036,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         undoStack.addLast(snapshotOf(p))
         restoreSnapshot(snapshot)
         updateHistoryCounts()
-        postMessage("やり直しました")
+        postMessage(app.getString(R.string.msg_redo))
     }
 
     // ---------------------------------------------------------------------
@@ -1056,7 +1057,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         _project.value = updated
         playback.setProject(updated)
         _trackPickerVisible.value = false
-        postMessage("${p.tracks[index].name} を編集します")
+        postMessage(app.getString(R.string.msg_track_editing, p.tracks[index].name))
     }
 
     /** Adds a new empty track and makes it active. */
@@ -1074,7 +1075,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         val updated = p.copy(tracks = p.tracks + newTrack, activeTrack = p.tracks.size)
         _project.value = updated
         playback.setProject(updated)
-        postMessage("トラック「${newTrack.name}」を追加しました")
+        postMessage(app.getString(R.string.msg_track_added, newTrack.name))
     }
 
     /** Removes the given track (must be more than 1 track). */
@@ -1086,7 +1087,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         val updated = p.copy(tracks = newTracks, activeTrack = newActive)
         _project.value = updated
         playback.setProject(updated)
-        postMessage("${p.tracks[index].name} を削除しました")
+        postMessage(app.getString(R.string.msg_track_deleted, p.tracks[index].name))
     }
 
     /** Toggles the mute state of the given track. */
@@ -1098,7 +1099,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         val updated = p.copy(tracks = newTracks)
         _project.value = updated
         playback.setProject(updated)
-        postMessage("${t.name} を${if (!t.isMuted) "ミュート" else "ミュート解除"}しました")
+        postMessage(if (!t.isMuted) app.getString(R.string.msg_muted, t.name) else app.getString(R.string.msg_unmuted, t.name))
     }
 
     /** Toggles the solo state of the given track. */
@@ -1110,7 +1111,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         val updated = p.copy(tracks = newTracks)
         _project.value = updated
         playback.setProject(updated)
-        postMessage("${t.name} を${if (!t.isSolo) "ソロ" else "ソロ解除"}しました")
+        postMessage(if (!t.isSolo) app.getString(R.string.msg_soloed, t.name) else app.getString(R.string.msg_unsoloed, t.name))
     }
 
     /** Toggles the track list panel visibility. */
@@ -1130,7 +1131,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         val updated = p.copy(tracks = newTracks)
         _project.value = updated
         playback.setProject(updated)
-        postMessage("トラック名を「$trimmed」に変更しました")
+        postMessage(app.getString(R.string.msg_track_renamed, trimmed))
     }
 
     // -----------------------------------------------------------------
@@ -1182,7 +1183,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     /** Opens the per-track audio export flow (SAF picker handled by the host). */
     fun requestTrackExport(trackIndex: Int, format: AudioExportFormat) {
         if (_project.value?.tracks?.getOrNull(trackIndex)?.notes.isNullOrEmpty()) {
-            postMessage("ノートがないため音声を書き出せません")
+            postMessage(app.getString(R.string.msg_export_no_notes))
             return
         }
         _uiCommands.tryEmit(UiCommand.ExportTrackAudio(trackIndex, format))
@@ -1191,7 +1192,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     /** Opens the per-track MIDI export flow (SAF picker handled by the host). */
     fun requestTrackMidiExport(trackIndex: Int) {
         if (_project.value?.tracks?.getOrNull(trackIndex)?.notes.isNullOrEmpty()) {
-            postMessage("ノートがないためMIDIを書き出せません")
+            postMessage(app.getString(R.string.msg_export_no_notes_midi))
             return
         }
         _uiCommands.tryEmit(UiCommand.ExportTrackMidi(trackIndex))
@@ -1202,7 +1203,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         val p = _project.value ?: return
         if (_busy.value.exporting) return
         if (trackIndex !in p.tracks.indices || p.tracks[trackIndex].notes.isEmpty()) {
-            postMessage("ノートがないためMIDIを書き出せません")
+            postMessage(app.getString(R.string.msg_export_no_notes_midi))
             return
         }
         _busy.value = _busy.value.copy(exporting = true)
@@ -1215,12 +1216,12 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                     app.contentResolver.openOutputStream(uri, "wt")?.use { out ->
                         out.write(bytes)
                         out.flush()
-                    } ?: throw IOException("保存先を開けません")
+                    } ?: throw IOException(app.getString(R.string.msg_save_open_failed))
                 }
             }
             result.fold(
-                onSuccess = { postMessage("${p.tracks[trackIndex].name} をMIDIで書き出しました") },
-                onFailure = { t -> postMessage("書き出しに失敗しました: ${t.message ?: t.javaClass.simpleName}") }
+                onSuccess = { postMessage(app.getString(R.string.msg_track_exported_midi, p.tracks[trackIndex].name)) },
+                onFailure = { t -> postMessage(app.getString(R.string.msg_export_failed, t.message ?: t.javaClass.simpleName)) }
             )
             _busy.value = _busy.value.copy(exporting = false)
         }
@@ -1231,7 +1232,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         val p = _project.value ?: return
         if (_busy.value.exporting) return
         if (trackIndex !in p.tracks.indices || p.tracks[trackIndex].notes.isEmpty()) {
-            postMessage("ノートがないため音声を書き出せません")
+            postMessage(app.getString(R.string.msg_export_no_notes))
             return
         }
         playback.pause()
@@ -1240,25 +1241,25 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
             val result = withContext(Dispatchers.IO) {
                 runCatching {
                     val font = audio.soundFontFor(trackIndex)
-                        ?: throw IOException("音源が準備できていません")
+                        ?: throw IOException(app.getString(R.string.msg_sound_not_ready))
                     val single = p.copy(tracks = listOf(p.tracks[trackIndex]), activeTrack = 0)
                     val pcm = AudioExporter.renderPcm(single, font, audio.currentUserVolume())
-                    if (pcm.isEmpty()) throw IOException("書き出す音がありません")
+                    if (pcm.isEmpty()) throw IOException(app.getString(R.string.msg_export_empty_audio))
                     when (format) {
                         AudioExportFormat.MP3 ->
                             app.contentResolver.openOutputStream(uri, "wt")?.use { out ->
                                 AudioExporter.encodeMp3(pcm, out)
-                            } ?: throw IOException("保存先を開けません")
+                            } ?: throw IOException(app.getString(R.string.msg_save_open_failed))
                         AudioExportFormat.AAC ->
                             app.contentResolver.openFileDescriptor(uri, "rwt")?.use { fd ->
                                 AudioExporter.encodeAac(pcm, fd.fileDescriptor)
-                            } ?: throw IOException("保存先を開けません")
+                            } ?: throw IOException(app.getString(R.string.msg_save_open_failed))
                     }
                 }
             }
             result.fold(
-                onSuccess = { postMessage("${p.tracks[trackIndex].name} を${format.label}で書き出しました") },
-                onFailure = { t -> postMessage("書き出しに失敗しました: ${t.message ?: t.javaClass.simpleName}") }
+                onSuccess = { postMessage(app.getString(R.string.msg_track_exported, p.tracks[trackIndex].name, format.label)) },
+                onFailure = { t -> postMessage(app.getString(R.string.msg_export_failed, t.message ?: t.javaClass.simpleName)) }
             )
             _busy.value = _busy.value.copy(exporting = false)
         }
@@ -1284,7 +1285,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         if (trackIndex !in p.tracks.indices) return
         val track = p.tracks[trackIndex]
         if (source is Sf2Source.File && !java.io.File(source.path).isFile) {
-            postMessage("SoundFontファイルが見つかりません")
+            postMessage(app.getString(R.string.msg_font_not_found))
             return
         }
         val newPath = when (source) {
@@ -1300,7 +1301,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         audio.loadForTrack(trackIndex, source, track.presetIndex)
         refreshLibraryFonts()
         if (trackIndex == activeTrackIndex()) syncSoundFontUiState()
-        postMessage("${track.name} の音源を「${Sf2Source.displayName(source)}」に変更しました")
+        postMessage(app.getString(R.string.msg_sound_assigned, track.name, Sf2Source.displayName(source, app)))
     }
 
     /** Removes a file font from the global library; its tracks fall back to bundled. */
@@ -1310,7 +1311,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         val p = _project.value ?: return
         refreshLibraryFonts()
         if (affected.isEmpty()) {
-            postMessage("ライブラリから削除しました")
+            postMessage(app.getString(R.string.msg_library_removed))
             return
         }
         val newTracks = p.tracks.mapIndexed { i, t ->
@@ -1321,7 +1322,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         playback.setProject(updated)
         syncSoundFontUiState()
         refreshLibraryFonts()
-        postMessage("ライブラリから削除しました（使用していたトラックは内蔵ピアノに戻りました）")
+        postMessage(app.getString(R.string.msg_library_removed_fallback))
     }
 
     /**
@@ -1342,8 +1343,8 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         audio.selectPreset(trackIndex, presetIndex)
         val name = audio.soundFontFor(trackIndex)?.presets?.getOrNull(presetIndex)?.name
         postMessage(
-            if (name != null) "プリセットを「$name」に切り替えました"
-            else "プリセットを${presetIndex + 1}番に切り替えました"
+            if (name != null) app.getString(R.string.msg_preset_name, name)
+            else app.getString(R.string.msg_preset_n, presetIndex + 1)
         )
     }
 
@@ -1402,12 +1403,12 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         val project = Project.empty()
         openTab(TabState(id, project, emptySet(), ViewportState(), emptyList(), emptyList(), emptyList(), 0))
         saveNow()
-        postMessage("新しいプロジェクトを作成しました")
+        postMessage(app.getString(R.string.msg_new_project))
     }
 
     fun renameProject(title: String) {
         val p = _project.value ?: return
-        val clean = title.trim().take(80).ifBlank { "無題" }
+        val clean = title.trim().take(80).ifBlank { app.getString(R.string.msg_saved_title) }
         if (clean == p.title) return
         _project.value = p.copy(title = clean)
         scheduleAutosave()
@@ -1545,7 +1546,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch {
             val data = withContext(Dispatchers.IO) { ProjectRepository.load(app, id) }
                 .getOrNull() ?: run {
-                    postMessage("プロジェクトを開けませんでした")
+                    postMessage(app.getString(R.string.msg_project_open_failed))
                     return@launch
                 }
             openTab(
@@ -1561,7 +1562,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                 )
             )
             _trackPickerVisible.value = data.project.tracks.size > 1
-            postMessage("「${data.project.title}」を開きました")
+            postMessage(app.getString(R.string.msg_project_opened, data.project.title))
         }
     }
 
@@ -1570,14 +1571,14 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
             val result = withContext(Dispatchers.IO) { ProjectRepository.rename(app, id, title) }
             result.fold(
                 onSuccess = {
-                    val clean = title.trim().take(80).ifBlank { "無題" }
+                    val clean = title.trim().take(80).ifBlank { app.getString(R.string.msg_saved_title) }
                     if (_tabs.value.getOrNull(_activeTabIndex.value)?.id == id) {
                         _project.value = _project.value?.copy(title = clean)
                     }
                     refreshProjects()
-                    postMessage("名前を変更しました")
+                    postMessage(app.getString(R.string.msg_renamed))
                 },
-                onFailure = { postMessage("名前を変更できませんでした") },
+                onFailure = { postMessage(app.getString(R.string.msg_rename_failed)) },
             )
         }
     }
@@ -1588,7 +1589,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch {
             withContext(Dispatchers.IO) { ProjectRepository.delete(app, id) }
             refreshProjects()
-            postMessage("プロジェクトを削除しました")
+            postMessage(app.getString(R.string.msg_project_deleted))
         }
     }
 
@@ -1634,12 +1635,12 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                     val meta = queryMeta(resolver, uri)
                     val knownSize = meta.second
                     if (knownSize != null && knownSize > 32L * 1024 * 1024) {
-                        throw IOException("MIDIファイルが大きすぎます (最大32MB)")
+                        throw IOException(app.getString(R.string.msg_midi_too_large))
                     }
                     val bytes = resolver.openInputStream(uri)?.use { readLimited(it, 32 * 1024 * 1024) }
-                        ?: throw IOException("ファイルを開けません")
+                        ?: throw IOException(app.getString(R.string.msg_file_open_failed))
                     val display = meta.first ?: "import.mid"
-                    val title = display.substringBeforeLast('.').ifBlank { "読み込んだ曲" }
+                    val title = display.substringBeforeLast('.').ifBlank { app.getString(R.string.msg_imported_song_title) }
                     MidiFile.parse(bytes, title)
                 }
             }
@@ -1666,12 +1667,12 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                     saveNow()
                     val warn = parsed.warnings.take(3).joinToString(" / ")
                     postMessage(
-                        if (warn.isBlank()) "MIDIを読み込みました (${project.tracks.size}トラック)"
-                        else "MIDIを読み込みました: $warn"
+                        if (warn.isBlank()) app.getString(R.string.msg_imported, project.tracks.size)
+                        else app.getString(R.string.msg_imported_warn, warn)
                     )
                 },
                 onFailure = { t ->
-                    postMessage("MIDIを読み込めません: ${t.message ?: t.javaClass.simpleName}")
+                    postMessage(app.getString(R.string.msg_import_failed, t.message ?: t.javaClass.simpleName))
                 }
             )
             _busy.value = _busy.value.copy(importing = false)
@@ -1689,12 +1690,12 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                     app.contentResolver.openOutputStream(uri, "wt")?.use { out ->
                         out.write(bytes)
                         out.flush()
-                    } ?: throw IOException("保存先を開けません")
+                    } ?: throw IOException(app.getString(R.string.msg_save_open_failed))
                 }
             }
             result.fold(
-                onSuccess = { postMessage("MIDIファイルを書き出しました") },
-                onFailure = { t -> postMessage("書き出しに失敗しました: ${t.message ?: t.javaClass.simpleName}") }
+                onSuccess = { postMessage(app.getString(R.string.msg_midi_exported)) },
+                onFailure = { t -> postMessage(app.getString(R.string.msg_export_failed, t.message ?: t.javaClass.simpleName)) }
             )
             _busy.value = _busy.value.copy(exporting = false)
         }
@@ -1708,7 +1709,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         val p = _project.value ?: return
         if (_busy.value.exporting) return
         if (p.tracks[activeTrackIndex()].notes.isEmpty()) {
-            postMessage("ノートがないため音声を書き出せません")
+            postMessage(app.getString(R.string.msg_export_no_notes))
             return
         }
         playback.pause()
@@ -1725,22 +1726,22 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                         { i -> if (i in p.tracks.indices) audio.soundFontFor(i) else fallback },
                         audio.currentUserVolume(),
                     )
-                    if (pcm.isEmpty()) throw IOException("書き出す音がありません")
+                    if (pcm.isEmpty()) throw IOException(app.getString(R.string.msg_export_empty_audio))
                     when (format) {
                         AudioExportFormat.MP3 ->
                             app.contentResolver.openOutputStream(uri, "wt")?.use { out ->
                                 AudioExporter.encodeMp3(pcm, out)
-                            } ?: throw IOException("保存先を開けません")
+                            } ?: throw IOException(app.getString(R.string.msg_save_open_failed))
                         AudioExportFormat.AAC ->
                             app.contentResolver.openFileDescriptor(uri, "rwt")?.use { fd ->
                                 AudioExporter.encodeAac(pcm, fd.fileDescriptor)
-                            } ?: throw IOException("保存先を開けません")
+                            } ?: throw IOException(app.getString(R.string.msg_save_open_failed))
                     }
                 }
             }
             result.fold(
-                onSuccess = { postMessage("${format.label}を書き出しました") },
-                onFailure = { t -> postMessage("書き出しに失敗しました: ${t.message ?: t.javaClass.simpleName}") }
+                onSuccess = { postMessage(app.getString(R.string.msg_exported_format, format.label)) },
+                onFailure = { t -> postMessage(app.getString(R.string.msg_export_failed, t.message ?: t.javaClass.simpleName)) }
             )
             _busy.value = _busy.value.copy(exporting = false)
         }
@@ -1761,7 +1762,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                     val (name, _) = queryMeta(app.contentResolver, uri)
                     val displayName = name?.takeIf { it.isNotBlank() } ?: "SoundFont.sf2"
                     val stream = app.contentResolver.openInputStream(uri)
-                        ?: throw IOException("ファイルを開けません")
+                        ?: throw IOException(app.getString(R.string.msg_file_open_failed))
                     // Streamed to disk and validated there: the bank does not
                     // have to fit in heap just to be installed.
                     val file = stream.use { storeSoundFont(it, displayName) }
@@ -1787,10 +1788,10 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                     _soundFontCustom.value = true
                     _soundFontFileName.value = file.name
                     refreshLibraryFonts()
-                    postMessage("SoundFont「$displayName」をライブラリに追加しました")
+                    postMessage(app.getString(R.string.msg_font_added, displayName))
                 },
                 onFailure = { t ->
-                    postMessage("SoundFontを読み込めません: ${t.message ?: t.javaClass.simpleName}")
+                    postMessage(app.getString(R.string.msg_font_failed, t.message ?: t.javaClass.simpleName))
                 }
             )
             _busy.value = _busy.value.copy(soundFont = false)
@@ -1830,7 +1831,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
             audio.setSustainAll(false)
         }
         _midiRecording.value = on
-        postMessage(if (on) "MIDI入力を録音します" else "MIDI入力の録音を停止しました")
+        postMessage(if (on) app.getString(R.string.msg_midi_rec_on) else app.getString(R.string.msg_midi_rec_off))
     }
 
     private fun handleMidiInput(event: MidiInputEvent) {
@@ -1927,7 +1928,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                 onSuccess = { (uri, name) ->
                     _uiCommands.tryEmit(UiCommand.Share(uri, "audio/midi", name))
                 },
-                onFailure = { t -> postMessage("共有に失敗しました: ${t.message ?: t.javaClass.simpleName}") },
+                onFailure = { t -> postMessage(app.getString(R.string.msg_share_failed, t.message ?: t.javaClass.simpleName)) },
             )
             _busy.value = _busy.value.copy(exporting = false)
         }
@@ -2200,14 +2201,14 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                 if (tabs.isNotEmpty()) {
                     activateTab(active.coerceIn(0, tabs.size - 1))
                     _autosave.value = AutosaveState.Saved(System.currentTimeMillis())
-                    postMessage("前回のプロジェクトを復元しました")
+                    postMessage(app.getString(R.string.msg_restored_last))
                 }
                 runPendingImport()
             },
             onFailure = { t ->
                 _boot.value = BootState.Ready(false)
                 autosaveEnabled = true
-                postMessage("ワークスペースを復元できませんでした: ${t.message ?: t.javaClass.simpleName}")
+                postMessage(app.getString(R.string.msg_restore_failed, t.message ?: t.javaClass.simpleName))
                 runPendingImport()
             },
         )
@@ -2256,7 +2257,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         val result = withContext(Dispatchers.IO) { ProjectRepository.save(app, id, snapshot) }
         _autosave.value = result.fold(
             onSuccess = { AutosaveState.Saved(snapshot.savedAtMillis) },
-            onFailure = { AutosaveState.Failed(it.message ?: "自動保存に失敗") }
+            onFailure = { AutosaveState.Failed(it.message ?: app.getString(R.string.msg_autosave_failed)) }
         )
         persistWorkspace()
     }
@@ -2381,7 +2382,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
             val n = input.read(buffer)
             if (n < 0) break
             total += n
-            if (total > maxBytes) throw IOException("ファイルが大きすぎます")
+            if (total > maxBytes) throw IOException(app.getString(R.string.msg_file_too_large))
             out.write(buffer, 0, n)
         }
         return out.toByteArray()
@@ -2417,12 +2418,12 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                     if (n < 0) break
                     total += n
                     if (total > MAX_SOUNDFONT_FILE_BYTES) {
-                        throw IOException("ファイルが大きすぎます")
+                        throw IOException(app.getString(R.string.msg_file_too_large))
                     }
                     out.write(buffer, 0, n)
                 }
             }
-            if (temp.length() == 0L) throw IOException("ファイルが空です")
+            if (temp.length() == 0L) throw IOException(app.getString(R.string.msg_file_empty))
             // Validate the copy before adding it to the library.
             SoundFontLoader.loadBank(temp)
         } catch (t: Throwable) {
@@ -2457,13 +2458,13 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun autosaveLabel(): String = when (val s = _autosave.value) {
-        AutosaveState.Idle -> "未保存"
-        AutosaveState.Saving -> "自動保存中…"
+        AutosaveState.Idle -> app.getString(R.string.msg_unsaved)
+        AutosaveState.Saving -> app.getString(R.string.status_autosaving)
         is AutosaveState.Saved -> {
             val f = SimpleDateFormat("HH:mm:ss", Locale.JAPAN)
-            "自動保存 ${f.format(Date(s.atMillis))}"
+            app.getString(R.string.msg_autosave_at, f.format(Date(s.atMillis)))
         }
-        is AutosaveState.Failed -> "自動保存エラー"
+        is AutosaveState.Failed -> app.getString(R.string.status_autosave_error)
     }
 
     fun trackLabel(index: Int): String {

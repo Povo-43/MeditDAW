@@ -103,6 +103,8 @@ import com.medit.daw.model.TimeSignature
 import com.medit.daw.model.noteName
 import kotlin.math.abs
 import kotlin.math.roundToInt
+import androidx.compose.ui.res.stringResource
+import com.medit.daw.R
 
 @Composable
 internal fun AppDialog(
@@ -179,7 +181,7 @@ internal fun AppDialog(
                                 }
                             }
                             IconButton(onClick = onDismiss, modifier = Modifier.size(44.dp)) {
-                                Icon(Icons.Rounded.Close, contentDescription = "閉じる")
+                                Icon(Icons.Rounded.Close, contentDescription = stringResource(R.string.common_close))
                             }
                         }
                         Spacer(Modifier.height(10.dp))
@@ -225,15 +227,15 @@ fun BpmDialog(
     val parsed = text.toDoubleOrNull()
     val valid = parsed != null && parsed in 20.0..400.0
     AppDialog(
-        title = "テンポ",
+        title = stringResource(R.string.settings_tempo_section),
         subtitle = "20〜400 BPM",
         icon = Icons.Rounded.Speed,
         onDismiss = onDismiss,
         actions = {
-            DialogSecondaryButton("キャンセル", Icons.Rounded.Close, onDismiss)
+            DialogSecondaryButton(stringResource(R.string.common_cancel), Icons.Rounded.Close, onDismiss)
             Spacer(Modifier.size(6.dp))
             DialogPrimaryButton(
-                text = "適用",
+                text = stringResource(R.string.common_apply),
                 icon = Icons.Rounded.Check,
                 enabled = valid,
                 onClick = { onApply(parsed!!.coerceIn(20.0, 400.0)) },
@@ -268,7 +270,7 @@ fun BpmDialog(
         }
         Spacer(Modifier.height(12.dp))
         Text(
-            "テンポは曲の先頭に書き出されます。",
+            stringResource(R.string.settings_tempo_export_note),
             style = MaterialTheme.typography.labelSmall,
             color = Mist,
         )
@@ -285,22 +287,22 @@ fun MeterDialog(
     var denominator by remember { mutableIntStateOf(initial.denominator) }
     val valid = numerator in 1..32 && denominator in listOf(1, 2, 4, 8, 16, 32)
     AppDialog(
-        title = "拍子",
-        subtitle = "曲の先頭の拍子を変更します",
+        title = stringResource(R.string.meter_title),
+        subtitle = stringResource(R.string.meter_desc),
         icon = Icons.Rounded.Timer,
         onDismiss = onDismiss,
         actions = {
-            DialogSecondaryButton("キャンセル", Icons.Rounded.Close, onDismiss)
+            DialogSecondaryButton(stringResource(R.string.common_cancel), Icons.Rounded.Close, onDismiss)
             Spacer(Modifier.size(6.dp))
             DialogPrimaryButton(
-                text = "適用",
+                text = stringResource(R.string.common_apply),
                 icon = Icons.Rounded.Check,
                 enabled = valid,
                 onClick = { onApply(numerator, denominator) },
             )
         },
     ) {
-        Text("分子", style = MaterialTheme.typography.labelMedium, color = Mist)
+        Text(stringResource(R.string.meter_numerator), style = MaterialTheme.typography.labelMedium, color = Mist)
         Spacer(Modifier.height(6.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             StepSquare("−") { numerator = (numerator - 1).coerceIn(1, 32) }
@@ -314,7 +316,7 @@ fun MeterDialog(
             StepSquare("+") { numerator = (numerator + 1).coerceIn(1, 32) }
         }
         Spacer(Modifier.height(16.dp))
-        Text("分母", style = MaterialTheme.typography.labelMedium, color = Mist)
+        Text(stringResource(R.string.meter_denominator), style = MaterialTheme.typography.labelMedium, color = Mist)
         Spacer(Modifier.height(6.dp))
         Row(
             Modifier
@@ -337,7 +339,7 @@ fun MeterDialog(
             shape = RoundedCornerShape(12.dp),
         ) {
             Text(
-                "$numerator / $denominator 拍子",
+                stringResource(R.string.meter_label, numerator, denominator),
                 modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
                 style = MaterialTheme.typography.bodyMedium,
                 color = Paper,
@@ -357,12 +359,12 @@ fun TrackPickerDialog(
     onSelect: (Int) -> Unit,
 ) {
     AppDialog(
-        title = "編集するトラック",
-        subtitle = "他のトラックはそのまま保持されます",
+        title = stringResource(R.string.track_edit_target),
+        subtitle = stringResource(R.string.track_edit_others),
         icon = Icons.Rounded.LibraryMusic,
         onDismiss = onDismiss,
         actions = {
-            DialogSecondaryButton("閉じる", Icons.Rounded.Close, onDismiss)
+            DialogSecondaryButton(stringResource(R.string.common_close), Icons.Rounded.Close, onDismiss)
         },
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -406,8 +408,8 @@ fun TrackPickerDialog(
                                 overflow = TextOverflow.Ellipsis,
                             )
                             Text(
-                                "${track.noteCount} ノート ・ CH ${track.channel + 1}" +
-                                    if (track.isDrum) " ・ ドラム" else "",
+                                stringResource(R.string.browser_track_info, track.noteCount, track.channel + 1) +
+                                    if (track.isDrum) stringResource(R.string.drum_suffix) else "",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = Mist,
                             )
@@ -415,7 +417,7 @@ fun TrackPickerDialog(
                         if (active) {
                             Icon(
                                 Icons.Rounded.Check,
-                                contentDescription = "選択中",
+                                contentDescription = stringResource(R.string.common_selected),
                                 tint = MaterialTheme.colorScheme.primary,
                             )
                         }
@@ -453,8 +455,8 @@ fun NoteInspectorDialog(
     val barLabel = meter.positionAt(note.startTick).label()
 
     AppDialog(
-        title = "ノートを編集",
-        subtitle = "選択したノートの数値編集",
+        title = stringResource(R.string.settings_notes_edit),
+        subtitle = stringResource(R.string.note_edit_selected),
         icon = Icons.Rounded.Edit,
         onDismiss = onDismiss,
         actions = {
@@ -466,15 +468,15 @@ fun NoteInspectorDialog(
             ) {
                 Icon(Icons.Rounded.Delete, contentDescription = null, modifier = Modifier.size(17.dp))
                 Spacer(Modifier.size(5.dp))
-                Text("削除")
+                Text(stringResource(R.string.common_delete))
             }
             TextButton(onClick = onDuplicate) {
                 Icon(Icons.Rounded.ContentCopy, contentDescription = null, modifier = Modifier.size(17.dp))
                 Spacer(Modifier.size(5.dp))
-                Text("複製")
+                Text(stringResource(R.string.dock_duplicate))
             }
             Spacer(Modifier.size(6.dp))
-            DialogPrimaryButton("完了", Icons.Rounded.Check, onClick = onDismiss)
+            DialogPrimaryButton(stringResource(R.string.common_done), Icons.Rounded.Check, onClick = onDismiss)
         },
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -492,9 +494,9 @@ fun NoteInspectorDialog(
             }
             Spacer(Modifier.size(12.dp))
             Column {
-                Text("位置 $barLabel", style = MaterialTheme.typography.labelMedium, color = Mist)
+                Text(stringResource(R.string.note_position, barLabel), style = MaterialTheme.typography.labelMedium, color = Mist)
                 Text(
-                    "tick ${note.startTick} ・ 長さ ${note.durationTicks}",
+                    stringResource(R.string.note_tick_len, note.startTick, note.durationTicks),
                     style = MaterialTheme.typography.labelSmall,
                     color = Mist,
                 )
@@ -503,7 +505,7 @@ fun NoteInspectorDialog(
             IconButton(onClick = onPreview, modifier = Modifier.size(48.dp)) {
                 Icon(
                     Icons.AutoMirrored.Rounded.VolumeUp,
-                    contentDescription = "試聴",
+                    contentDescription = stringResource(R.string.common_preview),
                     tint = MaterialTheme.colorScheme.primary,
                 )
             }
@@ -512,7 +514,7 @@ fun NoteInspectorDialog(
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
         Spacer(Modifier.height(10.dp))
 
-        Text("音高", style = MaterialTheme.typography.labelMedium, color = Mist)
+        Text(stringResource(R.string.note_pitch), style = MaterialTheme.typography.labelMedium, color = Mist)
         Row(verticalAlignment = Alignment.CenterVertically) {
             StepSquare("−12") { onUpdate((note.pitch - 12).coerceIn(0, 127), null, null, null) }
             Spacer(Modifier.size(5.dp))
@@ -530,7 +532,7 @@ fun NoteInspectorDialog(
         }
 
         Spacer(Modifier.height(10.dp))
-        Text("開始位置", style = MaterialTheme.typography.labelMedium, color = Mist)
+        Text(stringResource(R.string.note_start), style = MaterialTheme.typography.labelMedium, color = Mist)
         Row(verticalAlignment = Alignment.CenterVertically) {
             StepSquare("−") {
                 onUpdate(null, (note.startTick - step).coerceAtLeast(0), null, null)
@@ -552,7 +554,7 @@ fun NoteInspectorDialog(
         }
 
         Spacer(Modifier.height(10.dp))
-        Text("長さ", style = MaterialTheme.typography.labelMedium, color = Mist)
+        Text(stringResource(R.string.dock_length_menu), style = MaterialTheme.typography.labelMedium, color = Mist)
         Row(verticalAlignment = Alignment.CenterVertically) {
             StepSquare("−") {
                 onUpdate(null, null, (note.durationTicks - step).coerceAtLeast(1), null)
@@ -577,7 +579,7 @@ fun NoteInspectorDialog(
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
         Spacer(Modifier.height(10.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("ベロシティ", style = MaterialTheme.typography.labelMedium, color = Mist)
+            Text(stringResource(R.string.vel_dialog_title), style = MaterialTheme.typography.labelMedium, color = Mist)
             Spacer(Modifier.weight(1f))
             Text(
                 velocity.roundToInt().toString(),
@@ -595,7 +597,7 @@ fun NoteInspectorDialog(
             },
         )
         Text(
-            "変更は自動保存されます。元に戻すは上部の矢印から。",
+            stringResource(R.string.settings_autosave_undo),
             style = MaterialTheme.typography.labelSmall,
             color = Mist,
         )
@@ -617,22 +619,22 @@ fun SelectionVelocityDialog(
     else notes.sumOf { it.velocity } / notes.size
     var value by remember { mutableFloatStateOf(initial.toFloat()) }
     AppDialog(
-        title = "ベロシティ",
-        subtitle = "${notes.size} 個のノート",
+        title = stringResource(R.string.vel_dialog_title),
+        subtitle = stringResource(R.string.meta_notes_count, notes.size),
         icon = Icons.AutoMirrored.Rounded.VolumeUp,
         onDismiss = onDismiss,
         actions = {
-            DialogSecondaryButton("キャンセル", Icons.Rounded.Close, onDismiss)
+            DialogSecondaryButton(stringResource(R.string.common_cancel), Icons.Rounded.Close, onDismiss)
             Spacer(Modifier.size(6.dp))
             DialogPrimaryButton(
-                "適用",
+                stringResource(R.string.common_apply),
                 Icons.Rounded.Check,
                 onClick = { onApply(value.roundToInt()) },
             )
         },
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("強さ", style = MaterialTheme.typography.labelMedium, color = Mist)
+            Text(stringResource(R.string.vel_strength), style = MaterialTheme.typography.labelMedium, color = Mist)
             Spacer(Modifier.weight(1f))
             Text(
                 value.roundToInt().toString(),
@@ -647,7 +649,7 @@ fun SelectionVelocityDialog(
             valueRange = 1f..127f,
         )
         Text(
-            "選択中のすべてのノートに同じベロシティを設定します。",
+            stringResource(R.string.vel_align_desc),
             style = MaterialTheme.typography.labelSmall,
             color = Mist,
         )
@@ -667,15 +669,15 @@ fun SelectionLengthDialog(
     var text by remember { mutableStateOf(initial.toString()) }
     val parsed = text.toIntOrNull()
     AppDialog(
-        title = "長さ",
-        subtitle = "${notes.size} 個のノートを揃えます",
+        title = stringResource(R.string.dock_length_menu),
+        subtitle = stringResource(R.string.vel_align_count, notes.size),
         icon = Icons.Rounded.Straighten,
         onDismiss = onDismiss,
         actions = {
-            DialogSecondaryButton("キャンセル", Icons.Rounded.Close, onDismiss)
+            DialogSecondaryButton(stringResource(R.string.common_cancel), Icons.Rounded.Close, onDismiss)
             Spacer(Modifier.size(6.dp))
             DialogPrimaryButton(
-                text = "tickで適用",
+                text = stringResource(R.string.meter_apply_tick),
                 icon = Icons.Rounded.Check,
                 enabled = parsed != null && parsed > 0,
                 onClick = { parsed?.let { onApplyTicks(it.coerceAtLeast(1)) } },
@@ -685,14 +687,14 @@ fun SelectionLengthDialog(
         OutlinedTextField(
             value = text,
             onValueChange = { value -> text = value.filter { it.isDigit() }.take(7) },
-            label = { Text("長さ (tick)") },
+            label = { Text(stringResource(R.string.note_length)) },
             singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
             modifier = Modifier.fillMaxWidth(),
         )
         Spacer(Modifier.height(10.dp))
         Text(
-            "音符の長さをプリセットから選ぶ",
+            stringResource(R.string.vel_length_pick),
             style = MaterialTheme.typography.labelMedium,
             color = Mist,
         )
@@ -713,15 +715,15 @@ fun InputVelocityDialog(
 ) {
     var value by remember { mutableFloatStateOf(initial.toFloat()) }
     AppDialog(
-        title = "入力ベロシティ",
-        subtitle = "新しく追加する音符の強さ",
+        title = stringResource(R.string.settings_input_velocity),
+        subtitle = stringResource(R.string.vel_input_desc),
         icon = Icons.AutoMirrored.Rounded.VolumeUp,
         onDismiss = onDismiss,
         actions = {
-            DialogSecondaryButton("キャンセル", Icons.Rounded.Close, onDismiss)
+            DialogSecondaryButton(stringResource(R.string.common_cancel), Icons.Rounded.Close, onDismiss)
             Spacer(Modifier.size(6.dp))
             DialogPrimaryButton(
-                "適用",
+                stringResource(R.string.common_apply),
                 Icons.Rounded.Check,
                 onClick = { onApply(value.roundToInt()) },
             )
@@ -742,7 +744,7 @@ fun InputVelocityDialog(
             valueRange = 1f..127f,
         )
         Text(
-            "ペンで描く音符やタップで追加する音符に使われます。",
+            stringResource(R.string.settings_input_velocity_desc),
             style = MaterialTheme.typography.labelSmall,
             color = Mist,
         )
@@ -762,39 +764,39 @@ fun SettingsDialog(
     onHelp: () -> Unit,
 ) {
     AppDialog(
-        title = "設定",
+        title = stringResource(R.string.settings_title),
         icon = Icons.Rounded.Settings,
         onDismiss = onDismiss,
         actions = {
-            DialogSecondaryButton("操作ガイド", Icons.AutoMirrored.Rounded.HelpOutline, onHelp)
+            DialogSecondaryButton(stringResource(R.string.help_title), Icons.AutoMirrored.Rounded.HelpOutline, onHelp)
             Spacer(Modifier.size(6.dp))
-            DialogPrimaryButton("閉じる", Icons.Rounded.Check, onClick = onDismiss)
+            DialogPrimaryButton(stringResource(R.string.common_close), Icons.Rounded.Check, onClick = onDismiss)
         },
     ) {
-        SectionTitle("入力", Icons.Rounded.Tune)
-        SettingLabel("グリッド / スナップ")
+        SectionTitle(stringResource(R.string.settings_section_input), Icons.Rounded.Tune)
+        SettingLabel(stringResource(R.string.settings_grid_snap))
         GridUnitChips(selected = ui.prefs.grid, includeOff = true, onSelect = vm::setGrid)
         Spacer(Modifier.height(10.dp))
-        SettingLabel("新規音符の長さ")
+        SettingLabel(stringResource(R.string.settings_note_length))
         GridUnitChips(selected = ui.prefs.inputDuration, includeOff = false, onSelect = vm::setInputDuration)
         Spacer(Modifier.height(8.dp))
         ToggleRow(
-            title = "スナップ",
-            description = "音符の開始・終了をグリッドに合わせる",
+            title = stringResource(R.string.settings_snap),
+            description = stringResource(R.string.settings_snap_desc),
             icon = Icons.Rounded.GridOn,
             checked = ui.prefs.snapEnabled,
             onCheckedChange = vm::setSnapEnabled,
         )
         ToggleRow(
-            title = "指で音符を編集",
-            description = "オフにすると指はスクロールと選択だけに使います",
+            title = stringResource(R.string.settings_finger_edit),
+            description = stringResource(R.string.settings_finger_edit_desc),
             icon = Icons.Rounded.TouchApp,
             checked = ui.prefs.fingerEditing,
             onCheckedChange = vm::setFingerEditing,
         )
         ToggleRow(
-            title = "再生中の自動スクロール",
-            description = "再生位置が画面外に出たら追従します",
+            title = stringResource(R.string.settings_autoscroll),
+            description = stringResource(R.string.settings_autoscroll_desc),
             icon = Icons.Rounded.Swipe,
             checked = ui.prefs.autoScroll,
             onCheckedChange = vm::setAutoScroll,
@@ -808,7 +810,7 @@ fun SettingsDialog(
                 modifier = Modifier.size(18.dp),
             )
             Spacer(Modifier.size(8.dp))
-            Text("入力ベロシティ", style = MaterialTheme.typography.bodyMedium)
+            Text(stringResource(R.string.settings_input_velocity), style = MaterialTheme.typography.bodyMedium)
             Spacer(Modifier.weight(1f))
             Text(
                 ui.prefs.inputVelocity.toString(),
@@ -826,21 +828,21 @@ fun SettingsDialog(
         Spacer(Modifier.height(12.dp))
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
         Spacer(Modifier.height(12.dp))
-        SectionTitle("音源", Icons.Rounded.GraphicEq)
+        SectionTitle(stringResource(R.string.settings_sound_section), Icons.Rounded.GraphicEq)
         AudioStatusCard(ui, vm, onOpenLibrary)
 
         Spacer(Modifier.height(12.dp))
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
         Spacer(Modifier.height(12.dp))
-        SectionTitle("保存について", Icons.Rounded.Save)
+        SectionTitle(stringResource(R.string.settings_save_section), Icons.Rounded.Save)
         Text(
-            "編集内容は約0.7秒後にアプリ内へ自動保存されます。MIDIの書き出し先とは別なので、元のファイルが勝手に上書きされることはありません。",
+            stringResource(R.string.settings_autosave_desc),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(Modifier.height(8.dp))
         Text(
-            "MeditDAW ${BuildConfig.VERSION_NAME} ・ マルチトラックMIDIエディタ",
+            stringResource(R.string.settings_footer, BuildConfig.VERSION_NAME),
             style = MaterialTheme.typography.labelSmall,
             color = Mist,
         )
@@ -879,7 +881,7 @@ private fun AudioStatusCard(
                             color = MaterialTheme.colorScheme.primary,
                         )
                         Spacer(Modifier.size(8.dp))
-                        Text("音源を読み込み中…", style = MaterialTheme.typography.bodyMedium)
+                        Text(stringResource(R.string.library_loading_sound), style = MaterialTheme.typography.bodyMedium)
                     }
                     is TrackAudioStatus.Ready -> {
                         Column(Modifier.weight(1f)) {
@@ -897,7 +899,7 @@ private fun AudioStatusCard(
                                 }
                             }
                             Text(
-                                "${audio.fontName} ・ ${audio.regionCount} ゾーン",
+                                stringResource(R.string.settings_sound_zone, audio.fontName, audio.regionCount),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1,
@@ -906,7 +908,7 @@ private fun AudioStatusCard(
                             val fileName = ui.soundFontFileName
                             if (ui.soundFontCustom && !fileName.isNullOrBlank()) {
                                 Text(
-                                    "ファイル: $fileName",
+                                    stringResource(R.string.settings_file, fileName),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.secondary,
                                     maxLines = 1,
@@ -932,7 +934,7 @@ private fun AudioStatusCard(
             ) {
                 Icon(Icons.Rounded.FolderOpen, contentDescription = null, modifier = Modifier.size(17.dp))
                 Spacer(Modifier.size(6.dp))
-                Text(if (ui.busy.soundFont) "読込中…" else "音源ライブラリ…")
+                Text(if (ui.busy.soundFont) stringResource(R.string.library_loading_busy) else stringResource(R.string.menu_sound_library))
             }
             if (ui.soundFontCustom) {
                 Spacer(Modifier.height(12.dp))
@@ -944,7 +946,7 @@ private fun AudioStatusCard(
                         modifier = Modifier.size(18.dp),
                     )
                     Spacer(Modifier.size(8.dp))
-                    Text("音源の音量", style = MaterialTheme.typography.bodyMedium)
+                    Text(stringResource(R.string.settings_sound_volume), style = MaterialTheme.typography.bodyMedium)
                     Spacer(Modifier.weight(1f))
                     Text(
                         "${(ui.prefs.soundFontVolume * 100).roundToInt()}%",
@@ -959,14 +961,14 @@ private fun AudioStatusCard(
                     valueRange = 0f..2f,
                 )
                 Text(
-                    "読み込んだ音源の音量を調整します（100%で標準）。内蔵ピアノには影響しません。MP3/AAC書き出しにも反映されます。",
+                    stringResource(R.string.settings_sound_volume_desc),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             Spacer(Modifier.height(6.dp))
             Text(
-                "端末のファイルから SF2 (SoundFont 2.04) を自由に選べます。選んだファイルはアプリ内に保存され、次回起動時も使われます。SF3/Ogg 圧縮には対応していません。",
+                stringResource(R.string.settings_sound_pick_desc),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -982,7 +984,7 @@ private fun SourceBadge() {
         contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
     ) {
         Text(
-            "外部ファイル",
+            stringResource(R.string.settings_external_file),
             style = MaterialTheme.typography.labelSmall,
             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
         )
@@ -1078,110 +1080,110 @@ private fun ToggleRow(
 @Composable
 fun HelpDialog(onDismiss: () -> Unit) {
     AppDialog(
-        title = "操作ガイド",
-        subtitle = "指とスタイラスの操作",
+        title = stringResource(R.string.help_title),
+        subtitle = stringResource(R.string.help_subtitle),
         icon = Icons.AutoMirrored.Rounded.HelpOutline,
         onDismiss = onDismiss,
         actions = {
-            DialogPrimaryButton("閉じる", Icons.Rounded.Check, onClick = onDismiss)
+            DialogPrimaryButton(stringResource(R.string.common_close), Icons.Rounded.Check, onClick = onDismiss)
         },
     ) {
         HelpSection(
-            "ペン（スタイラス）",
+            stringResource(R.string.help_pen_section),
             Icons.Rounded.Edit,
             listOf(
-                "ペンを浮かせる : ゴースト音符と対象ノートがハイライトされます。",
-                "空欄をドラッグ : 音符の長さを描いて追加します。離した時点で確定します。",
-                "音符の中央をドラッグ : 選択中の音符をまとめて移動します。",
-                "音符の左右の端をドラッグ : 長さを変更します。端の判定にはヒステリシスがあります。",
-                "音符をダブルタップ : その音符を削除します。元に戻すで復元できます。",
-                "音符の数値編集 : 音符を選択し、下部ツールバーの「数値編集」を開きます。",
-                "ペンの消しゴム : 触れた音符を削除します。",
+                stringResource(R.string.help_pen_hover),
+                stringResource(R.string.help_pen_drag_empty),
+                stringResource(R.string.help_pen_drag_note_center),
+                stringResource(R.string.help_pen_drag_note_edge),
+                stringResource(R.string.help_pen_double_tap),
+                stringResource(R.string.help_pen_numeric),
+                stringResource(R.string.help_pen_eraser),
             ),
         )
         Spacer(Modifier.height(12.dp))
         HelpSection(
-            "指",
+            stringResource(R.string.help_finger_section),
             Icons.Rounded.TouchApp,
             listOf(
-                "空欄をタップ : 現在の長さで音符を追加します。",
-                "空欄をドラッグ : 最初に動いた方向へスクロールします（軸固定）。",
-                "2本指 : スクロールと、時間・音高のピンチズーム。",
-                "空欄を長押し : 矩形で複数ノートを選択します。",
-                "音符を長押し : 選択に追加 / 選択から除外します。",
-                "音符をドラッグ : 移動。端をドラッグすると長さ変更。",
-                "ルーラーをタップ / ドラッグ : 再生位置を移動。",
-                "ルーラーの下のループ帯 : ドラッグでループ範囲を指定。",
+                stringResource(R.string.help_finger_tap),
+                stringResource(R.string.help_finger_drag),
+                stringResource(R.string.help_finger_pinch),
+                stringResource(R.string.help_finger_long_empty),
+                stringResource(R.string.help_finger_long_note),
+                stringResource(R.string.help_finger_note_drag),
+                stringResource(R.string.help_ruler),
+                stringResource(R.string.help_loop_band),
             ),
         )
         Spacer(Modifier.height(12.dp))
         HelpSection(
-            "ベロシティ編集 / 複数選択",
+            stringResource(R.string.help_vel_section),
             Icons.Rounded.BarChart,
             listOf(
-                "下部ツールバーの「ベロシティ編集」で、ピアノロール下部にベロシティグラフを重ねて表示します。",
-                "グラフ上のノードを上下にドラッグすると、そのノートのベロシティを変更します。",
-                "複数ノートを選択しているときは、選択中のノードをまとめて上下に動かせます。",
-                "「複数選択」をオンにすると、ドラッグで範囲選択し、ノートをタップすると選択に追加 / 解除できます。",
-                "複数選択中はノートの移動・長さ変更は一時停止します。終わったらボタンをオフに戻してください。",
+                stringResource(R.string.help_vel_open),
+                stringResource(R.string.help_vel_drag),
+                stringResource(R.string.help_vel_multi),
+                stringResource(R.string.help_multiselect_on),
+                stringResource(R.string.help_multiselect_pause),
             ),
         )
         Spacer(Modifier.height(12.dp))
         HelpSection(
-            "下部ツールバー",
+            stringResource(R.string.help_toolbar_section),
             Icons.Rounded.Tune,
             listOf(
-                "選択中は、長さ・ベロシティ・移調・複製・コピー・カット・削除・クオンタイズ・ループ範囲が使えます。",
-                "未選択時は、グリッド・入力長・スナップ・入力ベロシティ・全クオンタイズ・全選択が使えます。",
-                "拡大 / 縮小 / 全体表示は時間軸と音高軸の両方に効きます。",
-                "「v を揃える」は選択中のノートのベロシティを同じ値にします。",
+                stringResource(R.string.help_toolbar_selected),
+                stringResource(R.string.help_toolbar_unselected),
+                stringResource(R.string.help_toolbar_zoom),
+                stringResource(R.string.help_align_v),
             ),
         )
         Spacer(Modifier.height(12.dp))
         HelpSection(
-            "保存とMIDI",
+            stringResource(R.string.help_save_section),
             Icons.Rounded.Save,
             listOf(
-                "プロジェクトは自動保存され、複数をタブで開いたまま切り替えられます。",
-                "「プロジェクトを開く」から保存済みのプロジェクトを開く・名前変更・削除できます。",
-                "MIDI書き出しは Storage Access Framework の保存先へ行います。",
-                "「共有」で書き出した .mid を Android の共有先 (メール・クラウド等) へ送れます。",
-                "読み込んだMIDIの他トラックは、編集していないイベントも含めて書き出し時に保持されます。",
-                "「MIDI META 設定」で著作権・キー・作曲者などのテキストを編集できます。",
-                "設定の「音源」から端末の SF2 ファイルを選べます。選んだファイルはアプリ内に保存され、次回起動時も使われます。",
+                stringResource(R.string.help_autosave_tabs),
+                stringResource(R.string.help_browser),
+                stringResource(R.string.help_export_saf),
+                stringResource(R.string.help_share),
+                stringResource(R.string.help_track_preserved),
+                stringResource(R.string.help_meta),
+                stringResource(R.string.help_soundfont_settings),
             ),
         )
         Spacer(Modifier.height(12.dp))
         HelpSection(
-            "物理キーボードで演奏",
+            stringResource(R.string.help_kb_section),
             Icons.Rounded.Piano,
             listOf(
-                "A S D F G H J K がドレミファソラシド (C4〜B4)、W E T Y U が黒鍵です。",
-                "K O L P ; は1オクターブ上。Z / X でオクターブを下げ / 上げます (-2〜+2)。",
-                "押した長さどおりのノートが記録されます (MIDI入力がアーム中は録音、未アームでも試聴できます)。",
-                "一時停止中でも、鍵盤を弾いた順にノートが時間順に並んで記録されます。",
+                stringResource(R.string.help_kb_row1),
+                stringResource(R.string.help_kb_row2),
+                stringResource(R.string.help_kb_record),
+                stringResource(R.string.help_kb_stopped),
             ),
         )
         Spacer(Modifier.height(12.dp))
         HelpSection(
-            "キーボードショートカット",
+            stringResource(R.string.help_sc_section),
             Icons.Rounded.Keyboard,
             listOf(
-                "スペース: 再生/一時停止。R: MIDI入力の録音 ON/OFF。Ctrl+L: ループ。Esc: 停止/選択解除。",
-                "Ctrl+Z / Ctrl+Shift+Z: 元に戻す / やり直す。Ctrl+C / X / V: コピー / カット / 貼り付け。",
-                "Ctrl+A: 全選択。Ctrl+D: 複製。Delete: 選択を削除。Ctrl+S: 保存。Ctrl+Shift+S: 共有。",
-                "矢印: 選択ノートを移動 / 移調 (Shiftでオクターブ)。未選択時は再生位置をグリッド刻みで移動。",
-                "Ctrl+Tab: タブ切替。Ctrl+= / Ctrl+- / Ctrl+0: ズーム / 全体表示。Home: 先頭へ。",
+                stringResource(R.string.help_sc_space),
+                stringResource(R.string.help_sc_undo),
+                stringResource(R.string.help_sc_misc),
+                stringResource(R.string.help_sc_arrows),
+                stringResource(R.string.help_sc_zoom),
             ),
         )
         Spacer(Modifier.height(12.dp))
         HelpSection(
-            "MIDIキーボード入力",
+            stringResource(R.string.help_midi_section),
             Icons.Rounded.Piano,
             listOf(
-                "USB / Bluetooth LE MIDIキーボードは自動で接続されます。",
-                "R でMIDI入力をアームしてから弾くと録音されます (停止中は弾いた位置から時間順に記録)。",
-                "アーム中はダンパーペダル (CC64) も記録・再生されます。",
+                stringResource(R.string.help_midi_auto),
+                stringResource(R.string.help_midi_arm),
+                stringResource(R.string.help_midi_pedal),
             ),
         )
     }
@@ -1226,23 +1228,24 @@ fun RenameDialog(
     initial: String,
     onDismiss: () -> Unit,
     onApply: (String) -> Unit,
-    title: String = "曲名",
-    label: String = "タイトル",
-    hint: String = "曲名は画面表示と書き出すファイル名の初期値に使われます。",
+    title: String = stringResource(R.string.rename_song_title),
+    label: String = stringResource(R.string.common_title),
+    hint: String = stringResource(R.string.rename_song_hint),
     maxLength: Int = 80,
 ) {
     var text by remember { mutableStateOf(initial) }
+    val untitledFallback = stringResource(R.string.msg_saved_title)
     AppDialog(
         title = title,
         icon = Icons.Rounded.DriveFileRenameOutline,
         onDismiss = onDismiss,
         actions = {
-            DialogSecondaryButton("キャンセル", Icons.Rounded.Close, onDismiss)
+            DialogSecondaryButton(stringResource(R.string.common_cancel), Icons.Rounded.Close, onDismiss)
             Spacer(Modifier.size(6.dp))
             DialogPrimaryButton(
-                text = "変更",
+                text = stringResource(R.string.common_change),
                 icon = Icons.Rounded.Check,
-                onClick = { onApply(text.trim().ifBlank { initial.ifBlank { "無題" } }) },
+                onClick = { onApply(text.trim().ifBlank { initial.ifBlank { untitledFallback } }) },
             )
         },
     ) {
@@ -1265,17 +1268,17 @@ fun RenameDialog(
 @Composable
 fun ConfirmNewDialog(onDismiss: () -> Unit, onConfirm: () -> Unit) {
     AppDialog(
-        title = "新しいプロジェクト",
+        title = stringResource(R.string.menu_new_project),
         icon = Icons.AutoMirrored.Rounded.NoteAdd,
         onDismiss = onDismiss,
         actions = {
-            DialogSecondaryButton("キャンセル", Icons.Rounded.Close, onDismiss)
+            DialogSecondaryButton(stringResource(R.string.common_cancel), Icons.Rounded.Close, onDismiss)
             Spacer(Modifier.size(6.dp))
-            DialogPrimaryButton("作成", Icons.Rounded.Add, onClick = onConfirm)
+            DialogPrimaryButton(stringResource(R.string.common_create), Icons.Rounded.Add, onClick = onConfirm)
         },
     ) {
         Text(
-            "現在の編集内容は自動保存に上書きされます。必要な場合は先にMIDIを書き出してください。",
+            stringResource(R.string.help_new_project_confirm),
             style = MaterialTheme.typography.bodyMedium,
         )
     }

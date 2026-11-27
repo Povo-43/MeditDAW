@@ -61,6 +61,8 @@ import com.medit.daw.model.MidiMeta
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import androidx.compose.ui.res.stringResource
+import com.medit.daw.R
 
 // ----------------------------------------------------------------------
 // Project browser
@@ -82,24 +84,24 @@ fun ProjectBrowserDialog(
     var deleteTarget by remember { mutableStateOf<ProjectSummary?>(null) }
 
     AppDialog(
-        title = "プロジェクト",
-        subtitle = "保存済みのプロジェクトを開く / 管理する",
+        title = stringResource(R.string.browser_title),
+        subtitle = stringResource(R.string.browser_open_desc),
         icon = Icons.Rounded.LibraryMusic,
         onDismiss = onDismiss,
         actions = {
-            DialogSecondaryButton("閉じる", Icons.Rounded.Close, onDismiss)
+            DialogSecondaryButton(stringResource(R.string.common_close), Icons.Rounded.Close, onDismiss)
         },
     ) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(onClick = onNew, modifier = Modifier.weight(1f)) {
                 Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(17.dp))
                 Spacer(Modifier.size(6.dp))
-                Text("新規")
+                Text(stringResource(R.string.browser_tab_new))
             }
             OutlinedButton(onClick = onImport, modifier = Modifier.weight(1f)) {
                 Icon(Icons.Rounded.FolderOpen, contentDescription = null, modifier = Modifier.size(17.dp))
                 Spacer(Modifier.size(6.dp))
-                Text("読み込む")
+                Text(stringResource(R.string.browser_tab_import))
             }
         }
         Spacer(Modifier.height(12.dp))
@@ -117,11 +119,11 @@ fun ProjectBrowserDialog(
                     color = MaterialTheme.colorScheme.primary,
                 )
                 Spacer(Modifier.size(10.dp))
-                Text("読み込み中…", style = MaterialTheme.typography.bodyMedium)
+                Text(stringResource(R.string.common_loading), style = MaterialTheme.typography.bodyMedium)
             }
         } else if (projects.isEmpty()) {
             Text(
-                "保存されたプロジェクトはまだありません。",
+                stringResource(R.string.browser_empty),
                 style = MaterialTheme.typography.bodyMedium,
                 color = Mist,
                 modifier = Modifier.padding(vertical = 10.dp),
@@ -153,21 +155,21 @@ fun ProjectBrowserDialog(
     }
     deleteTarget?.let { target ->
         AppDialog(
-            title = "プロジェクトを削除",
+            title = stringResource(R.string.browser_delete),
             subtitle = target.title,
             icon = Icons.Rounded.Delete,
             onDismiss = { deleteTarget = null },
             actions = {
-                DialogSecondaryButton("キャンセル", Icons.Rounded.Close) { deleteTarget = null }
+                DialogSecondaryButton(stringResource(R.string.common_cancel), Icons.Rounded.Close) { deleteTarget = null }
                 Spacer(Modifier.size(6.dp))
-                DialogPrimaryButton("削除", Icons.Rounded.Delete) {
+                DialogPrimaryButton(stringResource(R.string.common_delete), Icons.Rounded.Delete) {
                     onDelete(target.id)
                     deleteTarget = null
                 }
             },
         ) {
             Text(
-                "アプリ内に保存されたこのプロジェクトを削除します。書き出した .mid ファイルは残ります。",
+                stringResource(R.string.browser_delete_desc),
                 style = MaterialTheme.typography.bodyMedium,
             )
         }
@@ -221,7 +223,7 @@ private fun ProjectBrowserRow(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    "${summary.noteCount} ノート ・ ${formatSavedAt(summary.savedAtMillis)}",
+                    stringResource(R.string.browser_summary, summary.noteCount, formatSavedAt(summary.savedAtMillis)),
                     style = MaterialTheme.typography.labelSmall,
                     color = Mist,
                 )
@@ -229,14 +231,14 @@ private fun ProjectBrowserRow(
             IconButton(onClick = onRename, modifier = Modifier.size(40.dp)) {
                 Icon(
                     Icons.Rounded.DriveFileRenameOutline,
-                    contentDescription = "名前を変更",
+                    contentDescription = stringResource(R.string.common_rename),
                     tint = Paper,
                 )
             }
             IconButton(onClick = onDelete, modifier = Modifier.size(40.dp)) {
                 Icon(
                     Icons.Rounded.Delete,
-                    contentDescription = "削除",
+                    contentDescription = stringResource(R.string.common_delete),
                     tint = MaterialTheme.colorScheme.error,
                 )
             }
@@ -251,30 +253,32 @@ private fun RenameProjectDialog(
     onApply: (String) -> Unit,
 ) {
     var text by remember { mutableStateOf(initial) }
+    val untitledFallback = stringResource(R.string.msg_saved_title)
     AppDialog(
-        title = "名前を変更",
+        title = stringResource(R.string.common_rename),
         icon = Icons.Rounded.DriveFileRenameOutline,
         onDismiss = onDismiss,
         actions = {
-            DialogSecondaryButton("キャンセル", Icons.Rounded.Close, onDismiss)
+            DialogSecondaryButton(stringResource(R.string.common_cancel), Icons.Rounded.Close, onDismiss)
             Spacer(Modifier.size(6.dp))
-            DialogPrimaryButton("変更", Icons.Rounded.Check) {
-                onApply(text.trim().ifBlank { "無題" })
+            DialogPrimaryButton(stringResource(R.string.common_change), Icons.Rounded.Check) {
+                onApply(text.trim().ifBlank { untitledFallback })
             }
         },
     ) {
         OutlinedTextField(
             value = text,
             onValueChange = { text = it.take(80) },
-            label = { Text("タイトル") },
+            label = { Text(stringResource(R.string.common_title)) },
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
         )
     }
 }
 
+@Composable
 private fun formatSavedAt(millis: Long): String {
-    if (millis <= 0L) return "保存日時不明"
+    if (millis <= 0L) return stringResource(R.string.browser_unknown_date)
     val format = SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.JAPAN)
     return format.format(Date(millis))
 }
@@ -297,14 +301,14 @@ fun MidiMetaDialog(
     var minor by remember { mutableStateOf(initial.minor) }
 
     AppDialog(
-        title = "MIDI META 設定",
-        subtitle = "曲の著作権・キー・テキスト情報",
+        title = stringResource(R.string.menu_meta),
+        subtitle = stringResource(R.string.meta_desc),
         icon = Icons.Rounded.GraphicEq,
         onDismiss = onDismiss,
         actions = {
-            DialogSecondaryButton("キャンセル", Icons.Rounded.Close, onDismiss)
+            DialogSecondaryButton(stringResource(R.string.common_cancel), Icons.Rounded.Close, onDismiss)
             Spacer(Modifier.size(6.dp))
-            DialogPrimaryButton("適用", Icons.Rounded.Check) {
+            DialogPrimaryButton(stringResource(R.string.common_apply), Icons.Rounded.Check) {
                 onApply(
                     MidiMeta(
                         copyright = copyright.trim(),
@@ -318,22 +322,22 @@ fun MidiMetaDialog(
             }
         },
     ) {
-        MetaField("作曲者 (Text)", composer) { composer = it }
+        MetaField(stringResource(R.string.meta_composer), composer) { composer = it }
         Spacer(Modifier.height(8.dp))
-        MetaField("作詞者 (Text)", lyricist) { lyricist = it }
+        MetaField(stringResource(R.string.meta_lyricist), lyricist) { lyricist = it }
         Spacer(Modifier.height(8.dp))
-        MetaField("コメント (Text)", comment) { comment = it }
+        MetaField(stringResource(R.string.meta_comment), comment) { comment = it }
         Spacer(Modifier.height(8.dp))
-        MetaField("著作権 (Copyright)", copyright) { copyright = it }
+        MetaField(stringResource(R.string.meta_copyright), copyright) { copyright = it }
 
         Spacer(Modifier.height(14.dp))
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
         Spacer(Modifier.height(12.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("キー (Key Signature)", style = MaterialTheme.typography.labelMedium, color = Mist)
+            Text(stringResource(R.string.meta_key), style = MaterialTheme.typography.labelMedium, color = Mist)
             Spacer(Modifier.weight(1f))
             Text(
-                if (keySignature == null) "未設定"
+                if (keySignature == null) stringResource(R.string.meta_unset)
                 else keySignatureName(keySignature!!, minor),
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.primary,
@@ -350,7 +354,7 @@ fun MidiMetaDialog(
             FilterChip(
                 selected = keySignature == null,
                 onClick = { keySignature = null },
-                label = { Text("なし") },
+                label = { Text(stringResource(R.string.common_none)) },
                 modifier = Modifier.heightIn(min = 40.dp),
             )
             for (sf in -7..7) {
@@ -364,7 +368,7 @@ fun MidiMetaDialog(
         }
         Spacer(Modifier.height(8.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("短調 (minor)", style = MaterialTheme.typography.bodyMedium)
+            Text(stringResource(R.string.meta_minor), style = MaterialTheme.typography.bodyMedium)
             Spacer(Modifier.weight(1f))
             Switch(
                 checked = minor,
@@ -374,7 +378,7 @@ fun MidiMetaDialog(
         }
         Spacer(Modifier.height(8.dp))
         Text(
-            "著作権・キー・テキストは書き出し時に曲の先頭 (トラック1) のメタイベントとして反映されます。",
+            stringResource(R.string.meta_export_note),
             style = MaterialTheme.typography.labelSmall,
             color = Mist,
         )
@@ -413,17 +417,17 @@ fun MidiInputDialog(
     onRefresh: () -> Unit,
 ) {
     AppDialog(
-        title = "MIDIキーボード入力",
-        subtitle = "USB / Bluetooth LE MIDI から録音",
+        title = stringResource(R.string.help_midi_section),
+        subtitle = stringResource(R.string.midi_from_usb),
         icon = Icons.Rounded.Usb,
         onDismiss = onDismiss,
         actions = {
-            DialogSecondaryButton("閉じる", Icons.Rounded.Close, onDismiss)
+            DialogSecondaryButton(stringResource(R.string.common_close), Icons.Rounded.Close, onDismiss)
         },
     ) {
         if (!midi.supported) {
             Text(
-                "この端末は Android MIDI API に対応していません。",
+                stringResource(R.string.midi_unsupported),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.error,
             )
@@ -456,13 +460,13 @@ fun MidiInputDialog(
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
                     Text(
-                        if (midi.recording) "録音中" else "録音待機",
+                        if (midi.recording) stringResource(R.string.midi_recording) else stringResource(R.string.midi_record_wait),
                         style = MaterialTheme.typography.titleMedium,
                         color = if (midi.recording) MaterialTheme.colorScheme.error else Paper,
                     )
                     Text(
-                        if (midi.recording) "鍵盤を弾くと再生位置に記録されます"
-                        else "録音をオンにすると入力した音符が記録されます",
+                        if (midi.recording) stringResource(R.string.midi_record_hint4)
+                        else stringResource(R.string.midi_record_hint1),
                         style = MaterialTheme.typography.labelSmall,
                         color = Mist,
                     )
@@ -473,10 +477,10 @@ fun MidiInputDialog(
 
         Spacer(Modifier.height(12.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("入力デバイス", style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.midi_input_device), style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.weight(1f))
             IconButton(onClick = onRefresh, modifier = Modifier.size(40.dp)) {
-                Icon(Icons.Rounded.Refresh, contentDescription = "再検索", tint = Paper)
+                Icon(Icons.Rounded.Refresh, contentDescription = stringResource(R.string.midi_search), tint = Paper)
             }
         }
         Spacer(Modifier.height(4.dp))
@@ -484,7 +488,7 @@ fun MidiInputDialog(
         val receiveDevices = midi.devices.filter { it.canReceive }
         if (receiveDevices.isEmpty()) {
             Text(
-                "MIDIキーボードが見つかりません。USB接続、またはBluetooth MIDIでペアリングしてください。",
+                stringResource(R.string.midi_no_device),
                 style = MaterialTheme.typography.bodyMedium,
                 color = Mist,
                 modifier = Modifier.padding(vertical = 8.dp),
@@ -503,13 +507,13 @@ fun MidiInputDialog(
             TextButton(onClick = { onSelectDevice(null) }, enabled = midi.connected) {
                 Icon(Icons.Rounded.Close, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.size(5.dp))
-                Text("切断")
+                Text(stringResource(R.string.midi_disconnect))
             }
         }
         Spacer(Modifier.height(10.dp))
         Text(
-            "録音をオンにして再生しながら弾くと、入力した音符が再生位置に追加されます。" +
-                "停止中は入力長ぶんの長さで記録されます。サステインペダル (CC64) は試聴に反映されます。",
+            stringResource(R.string.midi_record_hint3) +
+                stringResource(R.string.midi_record_hint2),
             style = MaterialTheme.typography.labelSmall,
             color = Mist,
         )
@@ -551,8 +555,8 @@ private fun MidiDeviceRow(
                 )
                 Text(
                     buildString {
-                        append("入力")
-                        if (device.canSend) append(" / 出力")
+                        append(stringResource(R.string.settings_section_input))
+                        if (device.canSend) append(stringResource(R.string.midi_output_suffix))
                     },
                     style = MaterialTheme.typography.labelSmall,
                     color = Mist,
@@ -561,7 +565,7 @@ private fun MidiDeviceRow(
             if (selected) {
                 Icon(
                     Icons.Rounded.Check,
-                    contentDescription = "接続中",
+                    contentDescription = stringResource(R.string.midi_connected),
                     tint = MaterialTheme.colorScheme.primary,
                 )
             }

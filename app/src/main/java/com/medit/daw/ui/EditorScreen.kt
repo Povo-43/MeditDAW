@@ -148,6 +148,8 @@ import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import androidx.compose.ui.res.stringResource
+import com.medit.daw.R
 
 @Composable
 fun MeditApp(vm: EditorViewModel, initialUri: String? = null) {
@@ -223,6 +225,7 @@ fun MeditApp(vm: EditorViewModel, initialUri: String? = null) {
         }
 
         val context = LocalContext.current
+        val shareMidiText = stringResource(R.string.menu_share_midi)
         val projectBrowserVisible by vm.projectBrowserVisible.collectAsStateWithLifecycle()
         LaunchedEffect(vm) {
             vm.uiCommands.collect { command ->
@@ -252,7 +255,7 @@ fun MeditApp(vm: EditorViewModel, initialUri: String? = null) {
                             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                         }
                         runCatching {
-                            context.startActivity(Intent.createChooser(send, "MIDIを共有"))
+                            context.startActivity(Intent.createChooser(send, shareMidiText))
                         }
                     }
                 }
@@ -346,7 +349,7 @@ private fun BootScreen() {
             )
             CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
             Text(
-                "自動保存を確認しています…",
+                stringResource(R.string.status_autosave_checking),
                 style = MaterialTheme.typography.bodyMedium,
                 color = Mist,
             )
@@ -381,40 +384,40 @@ private fun WelcomeScreen(
             )
             Spacer(Modifier.height(6.dp))
             Text(
-                "タブレットのための、マルチトラックMIDIエディタ",
+                stringResource(R.string.app_tagline),
                 style = MaterialTheme.typography.titleMedium,
                 color = Mist,
                 textAlign = TextAlign.Center,
             )
             Spacer(Modifier.height(26.dp))
             ButtonWide(
-                label = "新しい曲を作成",
+                label = stringResource(R.string.welcome_new_song),
                 icon = Icons.Rounded.Add,
                 filled = true,
                 onClick = onNewProject,
             )
             Spacer(Modifier.height(12.dp))
             ButtonWide(
-                label = "MIDIファイルを読み込む",
+                label = stringResource(R.string.menu_import_file),
                 icon = Icons.Rounded.FolderOpen,
                 filled = false,
                 onClick = onImport,
             )
             Spacer(Modifier.height(12.dp))
             ButtonWide(
-                label = "保存済みプロジェクトを開く",
+                label = stringResource(R.string.msg_open_saved),
                 icon = Icons.Rounded.LibraryMusic,
                 filled = false,
                 onClick = onOpenProjects,
             )
             Spacer(Modifier.height(28.dp))
-            FeatureLine("ペン先でなぞって長さを指定、指でスクロール")
-            FeatureLine("2本指のピンチで時間・音高をズーム")
-            FeatureLine("SoundFontのピアノ音源を内蔵。再生と書き出しに対応")
-            FeatureLine("自動保存は元のMIDIファイルとは別に保存されます")
+            FeatureLine(stringResource(R.string.welcome_pen_only_hint))
+            FeatureLine(stringResource(R.string.welcome_pinch_hint))
+            FeatureLine(stringResource(R.string.msg_soundfont_desc))
+            FeatureLine(stringResource(R.string.settings_autosave_note))
             Spacer(Modifier.height(18.dp))
             Text(
-                "既存の .mid を読み込んだ場合、他のトラックのイベントは保持されます。",
+                stringResource(R.string.msg_keep_events),
                 style = MaterialTheme.typography.labelSmall,
                 color = Mist.copy(alpha = 0.8f),
                 textAlign = TextAlign.Center,
@@ -670,7 +673,7 @@ private fun EditorScreen(
                     ) {
                         Icon(
                             if (showTrackDetails) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
-                            contentDescription = if (showTrackDetails) "トラック情報を隠す" else "トラック情報を表示",
+                            contentDescription = if (showTrackDetails) stringResource(R.string.panel_track_info_hide) else stringResource(R.string.panel_track_info_show),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(19.dp),
                         )
@@ -697,7 +700,7 @@ private fun EditorScreen(
                             )
                             Spacer(Modifier.width(5.dp))
                             Text(
-                                "追加",
+                                stringResource(R.string.dock_add),
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurface,
                                 maxLines = 1,
@@ -711,7 +714,7 @@ private fun EditorScreen(
             val activeTrack = project.tracks.getOrNull(activeIdx)
             if (activeTrack != null && showTrackDetails) {
                 val sf2Label = activeTrack.soundFontPath.takeIf { it.isNotBlank() }
-                    ?.let { it.substringAfterLast('/')?.removeSuffix(".sf2") } ?: "内蔵ピアノ"
+                    ?.let { it.substringAfterLast('/')?.removeSuffix(".sf2") } ?: stringResource(R.string.panel_sound_bundled)
                 val presets = vm.trackPresets(activeIdx)
                 val activePresetName = presets.getOrNull(activeTrack.presetIndex)?.name ?: "—"
                 Row(
@@ -730,7 +733,7 @@ private fun EditorScreen(
                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
                         modifier = Modifier.heightIn(min = 34.dp),
                     ) {
-                        Text("M", style = MaterialTheme.typography.labelMedium)
+                        Text(stringResource(R.string.panel_mute), style = MaterialTheme.typography.labelMedium)
                     }
                     TextButton(
                         onClick = { vm.toggleTrackSolo(activeIdx) },
@@ -741,7 +744,7 @@ private fun EditorScreen(
                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
                         modifier = Modifier.heightIn(min = 34.dp),
                     ) {
-                        Text("S", style = MaterialTheme.typography.labelMedium)
+                        Text(stringResource(R.string.panel_solo), style = MaterialTheme.typography.labelMedium)
                     }
                     Spacer(Modifier.width(4.dp))
                     // Sound source + preset selectors share one compact line.
@@ -755,7 +758,7 @@ private fun EditorScreen(
                                 modifier = Modifier.heightIn(min = 30.dp),
                             ) {
                                 Text(
-                                    "音源: $sf2Label",
+                                    stringResource(R.string.panel_sound, sf2Label),
                                     style = MaterialTheme.typography.labelMedium,
                                     color = MaterialTheme.colorScheme.primary,
                                     maxLines = 1,
@@ -767,7 +770,7 @@ private fun EditorScreen(
                                 onDismissRequest = { fontMenuOpen = false },
                             ) {
                                 DropdownMenuItem(
-                                    text = { Text("内蔵ピアノ") },
+                                    text = { Text(stringResource(R.string.panel_sound_bundled)) },
                                     leadingIcon = {
                                         if (activeTrack.soundFontPath.isBlank()) {
                                             Icon(Icons.Rounded.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(14.dp))
@@ -781,7 +784,7 @@ private fun EditorScreen(
                                 val library = libraryFonts.filter { !it.isBundled }
                                 library.forEach { f ->
                                     DropdownMenuItem(
-                                        text = { Text("${f.name} (${f.presetCount}プリセット)") },
+                                        text = { Text(stringResource(R.string.library_font_entry, f.name, f.presetCount)) },
                                         leadingIcon = {
                                             if (activeTrack.soundFontPath == f.key) {
                                                 Icon(Icons.Rounded.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(14.dp))
@@ -795,7 +798,7 @@ private fun EditorScreen(
                                 }
                                 HorizontalDivider()
                                 DropdownMenuItem(
-                                    text = { Text("音源ライブラリ…") },
+                                    text = { Text(stringResource(R.string.menu_sound_library)) },
                                     onClick = {
                                         showFontLibrary = true
                                         fontMenuOpen = false
@@ -811,7 +814,7 @@ private fun EditorScreen(
                                 modifier = Modifier.heightIn(min = 30.dp),
                             ) {
                                 Text(
-                                    "プリセット: $activePresetName (${activeTrack.presetIndex + 1}/${presets.size})",
+                                    stringResource(R.string.panel_preset_selector, activePresetName, activeTrack.presetIndex + 1, presets.size),
                                     style = MaterialTheme.typography.labelMedium,
                                     color = MaterialTheme.colorScheme.primary,
                                     maxLines = 1,
@@ -824,7 +827,7 @@ private fun EditorScreen(
                             ) {
                                 if (presets.isEmpty()) {
                                     DropdownMenuItem(
-                                        text = { Text("プリセットがありません") },
+                                        text = { Text(stringResource(R.string.panel_preset_none)) },
                                         onClick = { presetMenuOpen = -1 },
                                     )
                                 }
@@ -850,7 +853,7 @@ private fun EditorScreen(
                         IconButton(onClick = { kebabMenuOpen = !kebabMenuOpen }) {
                             Icon(
                                 Icons.Rounded.MoreVert,
-                                contentDescription = "トラック設定",
+                                contentDescription = stringResource(R.string.panel_track_settings),
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.size(18.dp),
                             )
@@ -860,14 +863,14 @@ private fun EditorScreen(
                             onDismissRequest = { kebabMenuOpen = false },
                         ) {
                             DropdownMenuItem(
-                                text = { Text("名前を変更…") },
+                                text = { Text(stringResource(R.string.panel_track_rename)) },
                                 onClick = {
                                     renameTrackIndex = activeIdx
                                     kebabMenuOpen = false
                                 },
                             )
                             DropdownMenuItem(
-                                text = { Text("音源ライブラリ…") },
+                                text = { Text(stringResource(R.string.menu_sound_library)) },
                                 onClick = {
                                     showFontLibrary = true
                                     kebabMenuOpen = false
@@ -875,21 +878,21 @@ private fun EditorScreen(
                             )
                             HorizontalDivider()
                             DropdownMenuItem(
-                                text = { Text("MIDIで書き出す") },
+                                text = { Text(stringResource(R.string.msg_export_track_midi)) },
                                 onClick = {
                                     vm.requestTrackMidiExport(activeIdx)
                                     kebabMenuOpen = false
                                 },
                             )
                             DropdownMenuItem(
-                                text = { Text("MP3で書き出す") },
+                                text = { Text(stringResource(R.string.msg_export_track_mp3)) },
                                 onClick = {
                                     vm.requestTrackExport(activeIdx, AudioExportFormat.MP3)
                                     kebabMenuOpen = false
                                 },
                             )
                             DropdownMenuItem(
-                                text = { Text("M4Aで書き出す") },
+                                text = { Text(stringResource(R.string.msg_export_track_m4a)) },
                                 onClick = {
                                     vm.requestTrackExport(activeIdx, AudioExportFormat.AAC)
                                     kebabMenuOpen = false
@@ -898,7 +901,7 @@ private fun EditorScreen(
                             HorizontalDivider()
                             if (project.tracks.size > 1) {
                                 DropdownMenuItem(
-                                    text = { Text("このトラックを削除") },
+                                    text = { Text(stringResource(R.string.panel_track_delete)) },
                                     onClick = {
                                         vm.removeTrack(activeIdx)
                                         presetMenuOpen = -1
@@ -1049,9 +1052,9 @@ private fun EditorScreen(
                 vm.renameTrack(idx, name)
                 renameTrackIndex = -1
             },
-            title = "トラック名",
-            label = "トラック名",
-            hint = "トラック名はトラック一覧と書き出すファイル名の初期値に使われます。",
+            title = stringResource(R.string.rename_track_label),
+            label = stringResource(R.string.rename_track_label),
+            hint = stringResource(R.string.rename_track_hint),
             maxLength = 40,
         )
     }
@@ -1432,7 +1435,7 @@ private fun TitleBlock(
     onRename: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val autosaveText = remember(ui.autosave) { autosaveLabel(ui.autosave) }
+    val autosaveText = autosaveLabel(ui.autosave)
     val autosaveIcon = when (ui.autosave) {
         is AutosaveState.Saved -> Icons.Rounded.CheckCircle
         is AutosaveState.Failed -> Icons.Rounded.Warning
@@ -1440,18 +1443,18 @@ private fun TitleBlock(
     }
     val autosaveTint = if (ui.autosave is AutosaveState.Failed) Coral
     else MaterialTheme.colorScheme.onSurfaceVariant
-    val audioText = remember(ui.audio) {
+    val audioText = run {
         val statuses = ui.audio.values
-        if (statuses.isEmpty()) "音源: 未ロード"
+        if (statuses.isEmpty()) stringResource(R.string.status_audio_none)
         else {
             val failed = statuses.count { it is TrackAudioStatus.Failed }
             val loading = statuses.count { it is TrackAudioStatus.Loading }
             val ready = statuses.count { it is TrackAudioStatus.Ready }
             when {
-                failed > 0 -> "音源エラー ($failed)"
-                loading > 0 -> "音源読込中 ($loading)"
-                ready == statuses.size -> "音源: OK ($ready)"
-                else -> "音源: $ready/${statuses.size}"
+                failed > 0 -> stringResource(R.string.status_audio_failed, failed)
+                loading > 0 -> stringResource(R.string.status_audio_loading, loading)
+                ready == statuses.size -> stringResource(R.string.status_audio_ok, ready)
+                else -> stringResource(R.string.status_audio_ready, ready, statuses.size)
             }
         }
     }
@@ -1535,7 +1538,7 @@ private fun TransportControls(
             IconButton(onClick = vm::undo, enabled = ui.canUndo, modifier = Modifier.size(40.dp)) {
                 Icon(
                     Icons.AutoMirrored.Rounded.Undo,
-                    contentDescription = "元に戻す",
+                    contentDescription = stringResource(R.string.transport_undo),
                     tint = if (ui.canUndo) Paper else Mist.copy(alpha = 0.35f),
                 )
             }
@@ -1550,17 +1553,17 @@ private fun TransportControls(
         ) {
             Icon(
                 if (ui.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                contentDescription = if (ui.isPlaying) "一時停止" else "再生",
+                contentDescription = if (ui.isPlaying) stringResource(R.string.transport_pause) else stringResource(R.string.transport_play),
                 modifier = Modifier.size(24.dp),
             )
         }
         IconButton(onClick = vm::stopPlayback, modifier = Modifier.size(40.dp)) {
-            Icon(Icons.Rounded.Stop, contentDescription = "停止", tint = Paper)
+            Icon(Icons.Rounded.Stop, contentDescription = stringResource(R.string.transport_stop), tint = Paper)
         }
         IconButton(onClick = vm::toggleLoop, modifier = Modifier.size(40.dp)) {
             Icon(
                 Icons.Rounded.Loop,
-                contentDescription = "ループ",
+                contentDescription = stringResource(R.string.transport_loop),
                 tint = if (project.loopEnabled) MaterialTheme.colorScheme.secondary else Mist,
             )
         }
@@ -1577,7 +1580,7 @@ private fun TransportControls(
             IconButton(onClick = vm::redo, enabled = ui.canRedo, modifier = Modifier.size(40.dp)) {
                 Icon(
                     Icons.AutoMirrored.Rounded.Redo,
-                    contentDescription = "やり直す",
+                    contentDescription = stringResource(R.string.transport_redo),
                     tint = if (ui.canRedo) Paper else Mist.copy(alpha = 0.35f),
                 )
             }
@@ -1590,14 +1593,14 @@ private fun HistoryButtons(ui: EditorUiState, vm: EditorViewModel) {
     IconButton(onClick = vm::undo, enabled = ui.canUndo, modifier = Modifier.size(42.dp)) {
         Icon(
             Icons.AutoMirrored.Rounded.Undo,
-            contentDescription = "元に戻す",
+            contentDescription = stringResource(R.string.transport_undo),
             tint = if (ui.canUndo) Paper else Mist.copy(alpha = 0.35f),
         )
     }
     IconButton(onClick = vm::redo, enabled = ui.canRedo, modifier = Modifier.size(42.dp)) {
         Icon(
             Icons.AutoMirrored.Rounded.Redo,
-            contentDescription = "やり直す",
+            contentDescription = stringResource(R.string.transport_redo),
             tint = if (ui.canRedo) Paper else Mist.copy(alpha = 0.35f),
         )
     }
@@ -1659,7 +1662,7 @@ private fun MidiChip(
     val label = when {
         recording -> "REC"
         midi.connectedName != null -> midi.connectedName
-        midi.devices.any { it.canReceive } -> "MIDI入力"
+        midi.devices.any { it.canReceive } -> stringResource(R.string.dock_midi_input)
         else -> "MIDI"
     }
     Surface(
@@ -1719,7 +1722,7 @@ private fun TabStrip(tabs: List<TabInfo>, vm: EditorViewModel) {
             )
         }
         IconButton(onClick = vm::newProject, modifier = Modifier.size(36.dp)) {
-            Icon(Icons.Rounded.Add, contentDescription = "新しいタブ", tint = Paper)
+            Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.menu_new_tab), tint = Paper)
         }
     }
 }
@@ -1753,7 +1756,7 @@ private fun TabChip(tab: TabInfo, onSelect: () -> Unit, onClose: () -> Unit) {
             IconButton(onClick = onClose, modifier = Modifier.size(26.dp)) {
                 Icon(
                     Icons.Rounded.Close,
-                    contentDescription = "タブを閉じる",
+                    contentDescription = stringResource(R.string.menu_close_tab),
                     tint = Mist,
                     modifier = Modifier.size(15.dp),
                 )
@@ -1779,11 +1782,11 @@ private fun OverflowMenu(
     var expanded by remember { mutableStateOf(false) }
     Box {
         IconButton(onClick = { expanded = true }, modifier = Modifier.size(44.dp)) {
-            Icon(Icons.Rounded.MoreVert, contentDescription = "メニュー", tint = Paper)
+            Icon(Icons.Rounded.MoreVert, contentDescription = stringResource(R.string.transport_menu), tint = Paper)
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             DropdownMenuItem(
-                text = { Text("プロジェクトを開く") },
+                text = { Text(stringResource(R.string.menu_open_project)) },
                 leadingIcon = { Icon(Icons.Rounded.LibraryMusic, contentDescription = null) },
                 onClick = {
                     expanded = false
@@ -1791,7 +1794,7 @@ private fun OverflowMenu(
                 },
             )
             DropdownMenuItem(
-                text = { Text("共有") },
+                text = { Text(stringResource(R.string.menu_share)) },
                 leadingIcon = { Icon(Icons.Rounded.Share, contentDescription = null) },
                 onClick = {
                     expanded = false
@@ -1799,7 +1802,7 @@ private fun OverflowMenu(
                 },
             )
             DropdownMenuItem(
-                text = { Text("MIDI META 設定") },
+                text = { Text(stringResource(R.string.menu_meta)) },
                 leadingIcon = { Icon(Icons.Rounded.GraphicEq, contentDescription = null) },
                 onClick = {
                     expanded = false
@@ -1807,7 +1810,7 @@ private fun OverflowMenu(
                 },
             )
             DropdownMenuItem(
-                text = { Text("MIDIキーボード入力") },
+                text = { Text(stringResource(R.string.help_midi_section)) },
                 leadingIcon = { Icon(Icons.Rounded.Usb, contentDescription = null) },
                 onClick = {
                     expanded = false
@@ -1816,7 +1819,7 @@ private fun OverflowMenu(
             )
             HorizontalDivider()
             DropdownMenuItem(
-                text = { Text("MIDIを読み込む") },
+                text = { Text(stringResource(R.string.menu_import_midi)) },
                 leadingIcon = { Icon(Icons.Rounded.FileUpload, contentDescription = null) },
                 onClick = {
                     expanded = false
@@ -1824,7 +1827,7 @@ private fun OverflowMenu(
                 },
             )
             DropdownMenuItem(
-                text = { Text("MIDIを書き出す") },
+                text = { Text(stringResource(R.string.menu_export_midi)) },
                 leadingIcon = { Icon(Icons.Rounded.FileDownload, contentDescription = null) },
                 onClick = {
                     expanded = false
@@ -1832,7 +1835,7 @@ private fun OverflowMenu(
                 },
             )
             DropdownMenuItem(
-                text = { Text("MP3 音声を書き出す") },
+                text = { Text(stringResource(R.string.msg_export_mp3_menu)) },
                 leadingIcon = { Icon(Icons.Rounded.GraphicEq, contentDescription = null) },
                 onClick = {
                     expanded = false
@@ -1840,7 +1843,7 @@ private fun OverflowMenu(
                 },
             )
             DropdownMenuItem(
-                text = { Text("M4A 音声を書き出す (.m4a)") },
+                text = { Text(stringResource(R.string.msg_export_m4a_menu)) },
                 leadingIcon = { Icon(Icons.Rounded.MusicNote, contentDescription = null) },
                 onClick = {
                     expanded = false
@@ -1848,7 +1851,7 @@ private fun OverflowMenu(
                 },
             )
             DropdownMenuItem(
-                text = { Text("音源ライブラリ…") },
+                text = { Text(stringResource(R.string.menu_sound_library)) },
                 leadingIcon = { Icon(Icons.Rounded.Audiotrack, contentDescription = null) },
                 onClick = {
                     expanded = false
@@ -1857,7 +1860,7 @@ private fun OverflowMenu(
             )
             HorizontalDivider()
             DropdownMenuItem(
-                text = { Text("新しいプロジェクト") },
+                text = { Text(stringResource(R.string.menu_new_project)) },
                 leadingIcon = { Icon(Icons.Rounded.Add, contentDescription = null) },
                 onClick = {
                     expanded = false
@@ -1865,7 +1868,7 @@ private fun OverflowMenu(
                 },
             )
             DropdownMenuItem(
-                text = { Text("設定") },
+                text = { Text(stringResource(R.string.settings_title)) },
                 leadingIcon = { Icon(Icons.Rounded.Settings, contentDescription = null) },
                 onClick = {
                     expanded = false
@@ -1873,7 +1876,7 @@ private fun OverflowMenu(
                 },
             )
             DropdownMenuItem(
-                text = { Text("操作ガイド") },
+                text = { Text(stringResource(R.string.help_title)) },
                 leadingIcon = { Icon(Icons.AutoMirrored.Rounded.HelpOutline, contentDescription = null) },
                 onClick = {
                     expanded = false
@@ -1891,14 +1894,15 @@ private fun formatBpm(bpm: Double): String =
         String.format(Locale.JAPAN, "%.1f", bpm)
     }
 
+@Composable
 private fun autosaveLabel(state: AutosaveState): String = when (state) {
-    AutosaveState.Idle -> "未保存"
-    AutosaveState.Saving -> "自動保存中…"
+    AutosaveState.Idle -> stringResource(R.string.msg_unsaved)
+    AutosaveState.Saving -> stringResource(R.string.status_autosaving)
     is AutosaveState.Saved -> {
         val format = SimpleDateFormat("HH:mm:ss", Locale.JAPAN)
-        "自動保存 ${format.format(Date(state.atMillis))}"
+        stringResource(R.string.status_autosave_at, format.format(Date(state.atMillis)))
     }
-    is AutosaveState.Failed -> "自動保存エラー"
+    is AutosaveState.Failed -> stringResource(R.string.status_autosave_error)
 }
 
 // ----------------------------------------------------------------------
@@ -1937,7 +1941,7 @@ private fun ContextDock(
             DockAction(
                 id = "grid",
                 icon = if (ui.prefs.grid == GridUnit.OFF) Icons.Rounded.GridOff else Icons.Rounded.GridOn,
-                label = "グリッド ${ui.prefs.grid.label}",
+                label = stringResource(R.string.dock_grid_label, ui.prefs.grid.label),
                 active = ui.prefs.grid != GridUnit.OFF,
                 onClick = vm::cycleGrid,
             )
@@ -1946,7 +1950,7 @@ private fun ContextDock(
             DockAction(
                 id = "length",
                 icon = Icons.Rounded.Straighten,
-                label = "長さ ${ui.prefs.inputDuration.label}",
+                label = stringResource(R.string.dock_length, ui.prefs.inputDuration.label),
                 onClick = vm::cycleInputDuration,
             )
         )
@@ -1954,7 +1958,7 @@ private fun ContextDock(
             DockAction(
                 id = "snap",
                 icon = if (ui.prefs.snapEnabled) Icons.Rounded.Check else Icons.Rounded.Close,
-                label = "スナップ ${if (ui.prefs.snapEnabled) "ON" else "OFF"}",
+                label = stringResource(R.string.dock_snap, if (ui.prefs.snapEnabled) stringResource(R.string.common_on) else stringResource(R.string.common_off)),
                 active = ui.prefs.snapEnabled,
                 onClick = { vm.setSnapEnabled(!ui.prefs.snapEnabled) },
             )
@@ -1963,7 +1967,7 @@ private fun ContextDock(
             DockAction(
                 id = "velocity",
                 icon = Icons.AutoMirrored.Rounded.VolumeUp,
-                label = "入力 v${ui.prefs.inputVelocity}",
+                label = stringResource(R.string.dock_input_velocity, ui.prefs.inputVelocity),
                 onClick = onInputVelocity,
             )
         )
@@ -1971,7 +1975,7 @@ private fun ContextDock(
             DockAction(
                 id = "velocityEditor",
                 icon = Icons.Rounded.BarChart,
-                label = "ベロシティ編集",
+                label = stringResource(R.string.dock_velocity_editor),
                 active = ui.prefs.velocityEditor,
                 onClick = vm::toggleVelocityEditor,
             )
@@ -1980,7 +1984,7 @@ private fun ContextDock(
             DockAction(
                 id = "sustainLane",
                 icon = Icons.Rounded.LinearScale,
-                label = "ペダル",
+                label = stringResource(R.string.dock_pedal),
                 active = ui.prefs.showSustainLane,
                 onClick = vm::toggleSustainLane,
             )
@@ -1989,7 +1993,7 @@ private fun ContextDock(
             DockAction(
                 id = "tempoLane",
                 icon = Icons.Rounded.Speed,
-                label = "テンポ",
+                label = stringResource(R.string.settings_tempo_section),
                 active = ui.prefs.showTempoLane,
                 onClick = vm::toggleTempoLane,
             )
@@ -1998,7 +2002,7 @@ private fun ContextDock(
             DockAction(
                 id = "multiSelect",
                 icon = Icons.Rounded.HighlightAlt,
-                label = if (ui.prefs.multiSelectMode) "複数選択 ON" else "複数選択",
+                label = if (ui.prefs.multiSelectMode) stringResource(R.string.dock_multiselect_on) else stringResource(R.string.dock_multiselect),
                 active = ui.prefs.multiSelectMode,
                 onClick = vm::toggleMultiSelectMode,
             )
@@ -2007,7 +2011,7 @@ private fun ContextDock(
             DockAction(
                 id = "quantizeAll",
                 icon = Icons.Rounded.AutoFixHigh,
-                label = "全クオンタイズ",
+                label = stringResource(R.string.dock_quantize_all),
                 enabled = project.notes.isNotEmpty(),
                 onClick = vm::quantizeAll,
             )
@@ -2016,7 +2020,7 @@ private fun ContextDock(
             DockAction(
                 id = "selectAll",
                 icon = Icons.Rounded.SelectAll,
-                label = "全選択",
+                label = stringResource(R.string.dock_select_all),
                 enabled = project.notes.isNotEmpty(),
                 onClick = vm::selectAll,
             )
@@ -2025,7 +2029,7 @@ private fun ContextDock(
             DockAction(
                 id = "paste",
                 icon = Icons.Rounded.ContentPaste,
-                label = "貼り付け",
+                label = stringResource(R.string.dock_paste),
                 onClick = vm::pasteAtPlayhead,
             )
         )
@@ -2038,7 +2042,7 @@ private fun ContextDock(
                     DockAction(
                         id = "clear",
                         icon = Icons.Rounded.Close,
-                        label = "選択解除",
+                        label = stringResource(R.string.dock_clear_selection),
                         onClick = vm::clearSelection,
                     )
                 )
@@ -2046,7 +2050,7 @@ private fun ContextDock(
                     DockAction(
                         id = "length",
                         icon = Icons.Rounded.Straighten,
-                        label = "長さ",
+                        label = stringResource(R.string.dock_length_menu),
                         onClick = onLength,
                     )
                 )
@@ -2054,7 +2058,7 @@ private fun ContextDock(
                     DockAction(
                         id = "velocityEditor",
                         icon = Icons.Rounded.BarChart,
-                        label = "ベロシティ編集",
+                        label = stringResource(R.string.dock_velocity_editor),
                         active = ui.prefs.velocityEditor,
                         onClick = vm::toggleVelocityEditor,
                     )
@@ -2063,7 +2067,7 @@ private fun ContextDock(
                     DockAction(
                         id = "velocity",
                         icon = Icons.Rounded.GraphicEq,
-                        label = "v を揃える",
+                        label = stringResource(R.string.dock_align_velocity),
                         onClick = onVelocity,
                     )
                 )
@@ -2071,7 +2075,7 @@ private fun ContextDock(
                     DockAction(
                         id = "multiSelect",
                         icon = Icons.Rounded.HighlightAlt,
-                        label = if (ui.prefs.multiSelectMode) "複数選択 ON" else "複数選択",
+                        label = if (ui.prefs.multiSelectMode) stringResource(R.string.dock_multiselect_on) else stringResource(R.string.dock_multiselect),
                         active = ui.prefs.multiSelectMode,
                         onClick = vm::toggleMultiSelectMode,
                     )
@@ -2112,7 +2116,7 @@ private fun ContextDock(
                     DockAction(
                         id = "duplicate",
                         icon = Icons.Rounded.FileCopy,
-                        label = "複製",
+                        label = stringResource(R.string.dock_duplicate),
                         onClick = vm::duplicateSelection,
                     )
                 )
@@ -2120,7 +2124,7 @@ private fun ContextDock(
                     DockAction(
                         id = "copy",
                         icon = Icons.Rounded.ContentCopy,
-                        label = "コピー",
+                        label = stringResource(R.string.dock_copy),
                         onClick = vm::copySelection,
                     )
                 )
@@ -2128,7 +2132,7 @@ private fun ContextDock(
                     DockAction(
                         id = "cut",
                         icon = Icons.Rounded.ContentCut,
-                        label = "カット",
+                        label = stringResource(R.string.dock_cut),
                         onClick = vm::cutSelection,
                     )
                 )
@@ -2136,7 +2140,7 @@ private fun ContextDock(
                     DockAction(
                         id = "paste",
                         icon = Icons.Rounded.ContentPaste,
-                        label = "貼り付け",
+                        label = stringResource(R.string.dock_paste),
                         onClick = vm::pasteAtPlayhead,
                     )
                 )
@@ -2144,7 +2148,7 @@ private fun ContextDock(
                     DockAction(
                         id = "delete",
                         icon = Icons.Rounded.Delete,
-                        label = "削除",
+                        label = stringResource(R.string.common_delete),
                         onClick = vm::deleteSelection,
                     )
                 )
@@ -2152,7 +2156,7 @@ private fun ContextDock(
                     DockAction(
                         id = "quantize",
                         icon = Icons.Rounded.AutoFixHigh,
-                        label = "クオンタイズ",
+                        label = stringResource(R.string.dock_quantize),
                         onClick = vm::quantizeSelection,
                     )
                 )
@@ -2160,7 +2164,7 @@ private fun ContextDock(
                     DockAction(
                         id = "loop",
                         icon = Icons.Rounded.Loop,
-                        label = "ループ範囲",
+                        label = stringResource(R.string.dock_loop_range),
                         onClick = vm::loopFromSelection,
                     )
                 )
@@ -2168,7 +2172,7 @@ private fun ContextDock(
                     DockAction(
                         id = "selectAll",
                         icon = Icons.Rounded.SelectAll,
-                        label = "全選択",
+                        label = stringResource(R.string.dock_select_all),
                         onClick = vm::selectAll,
                     )
                 )
@@ -2177,7 +2181,7 @@ private fun ContextDock(
                         DockAction(
                             id = "inspector",
                             icon = Icons.Rounded.Edit,
-                            label = "数値編集",
+                            label = stringResource(R.string.dock_numeric_edit),
                             onClick = onInspector,
                         )
                     )
@@ -2191,7 +2195,7 @@ private fun ContextDock(
                 DockAction(
                     id = "barPrev",
                     icon = Icons.AutoMirrored.Rounded.KeyboardArrowLeft,
-                    label = "前の小節",
+                    label = stringResource(R.string.transport_prev_bar),
                     onClick = { onScrollBars(-1) },
                 )
             )
@@ -2199,7 +2203,7 @@ private fun ContextDock(
                 DockAction(
                     id = "barNext",
                     icon = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
-                    label = "次の小節",
+                    label = stringResource(R.string.transport_next_bar),
                     onClick = { onScrollBars(1) },
                 )
             )
@@ -2207,7 +2211,7 @@ private fun ContextDock(
                 DockAction(
                     id = "zoomOut",
                     icon = Icons.Rounded.ZoomOut,
-                    label = "縮小",
+                    label = stringResource(R.string.dock_zoom_out),
                     onClick = onZoomOut,
                 )
             )
@@ -2215,7 +2219,7 @@ private fun ContextDock(
                 DockAction(
                     id = "zoomIn",
                     icon = Icons.Rounded.ZoomIn,
-                    label = "拡大",
+                    label = stringResource(R.string.dock_zoom_in),
                     onClick = onZoomIn,
                 )
             )
@@ -2223,7 +2227,7 @@ private fun ContextDock(
                 DockAction(
                     id = "fit",
                     icon = Icons.Rounded.Tune,
-                    label = "全体表示",
+                    label = stringResource(R.string.roll_fit_all),
                     onClick = onFit,
                 )
             )
@@ -2231,7 +2235,7 @@ private fun ContextDock(
                 DockAction(
                     id = "loopToggle",
                     icon = Icons.Rounded.Loop,
-                    label = "ループ ${if (project.loopEnabled) "ON" else "OFF"}",
+                    label = stringResource(R.string.transport_loop_status, if (project.loopEnabled) stringResource(R.string.common_on) else stringResource(R.string.common_off)),
                     active = project.loopEnabled,
                     onClick = vm::toggleLoop,
                 )
@@ -2240,7 +2244,7 @@ private fun ContextDock(
                 DockAction(
                     id = "settings",
                     icon = Icons.Rounded.Settings,
-                    label = "設定",
+                    label = stringResource(R.string.settings_title),
                     onClick = onSettings,
                 )
             )
@@ -2269,13 +2273,13 @@ private fun ContextDock(
                 Text(
                     text = when {
                         ui.prefs.multiSelectMode && selectionCount == 0 ->
-                            "複数選択 ON ・ ドラッグで範囲選択 / ノートをタップで追加"
+                            stringResource(R.string.dock_multiselect_hint)
                         ui.prefs.multiSelectMode ->
-                            "複数選択 ON ・ $selectionCount / ${project.notes.size} ノートを選択"
+                            stringResource(R.string.dock_multiselect_count, selectionCount, project.notes.size)
                         selectionCount == 0 ->
-                            "入力 ${ui.prefs.inputDuration.label} ・ グリッド ${ui.prefs.grid.label} ・ スナップ ${if (ui.prefs.snapEnabled) "ON" else "OFF"}"
+                            stringResource(R.string.status_input_grid_snap, ui.prefs.inputDuration.label, ui.prefs.grid.label, if (ui.prefs.snapEnabled) stringResource(R.string.common_on) else stringResource(R.string.common_off))
                         else ->
-                            "$selectionCount / ${project.notes.size} ノートを選択"
+                            stringResource(R.string.status_selected_notes, selectionCount, project.notes.size)
                     },
                     style = MaterialTheme.typography.labelSmall,
                     color = if (selectionCount == 0) Mist else MaterialTheme.colorScheme.secondary,
@@ -2383,7 +2387,7 @@ private fun TrackPanel(
     ) {
         Column {
             Text(
-                "トラック",
+                stringResource(R.string.panel_track_title),
                 style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier.padding(start = 14.dp, top = 10.dp, bottom = 6.dp),
             )
@@ -2393,12 +2397,12 @@ private fun TrackPanel(
                     val status = ui.audio[index]
                     val statusText = when (status) {
                         is TrackAudioStatus.Ready -> status.presetName
-                        is TrackAudioStatus.Failed -> "エラー: ${status.message}"
-                        is TrackAudioStatus.Loading -> "読込中…"
+                        is TrackAudioStatus.Failed -> stringResource(R.string.panel_error, status.message)
+                        is TrackAudioStatus.Loading -> stringResource(R.string.library_loading_busy)
                         else -> "—"
                     }
                     val sf2Label = track.soundFontPath.takeIf { it.isNotBlank() }
-                        ?.let { it.substringAfterLast('/')?.removeSuffix(".sf2") } ?: "内蔵ピアノ"
+                        ?.let { it.substringAfterLast('/')?.removeSuffix(".sf2") } ?: stringResource(R.string.panel_sound_bundled)
                     var trackMenuOpen by remember { mutableStateOf(false) }
                     var fontMenuOpen by remember { mutableStateOf(false) }
 
@@ -2444,14 +2448,14 @@ private fun TrackPanel(
                                         onDismissRequest = { trackMenuOpen = false },
                                     ) {
                                         DropdownMenuItem(
-                                            text = { Text("名前を変更…") },
+                                            text = { Text(stringResource(R.string.panel_track_rename)) },
                                             onClick = {
                                                 onRenameTrack(index)
                                                 trackMenuOpen = false
                                             },
                                         )
                                         DropdownMenuItem(
-                                            text = { Text("音源ライブラリ…") },
+                                            text = { Text(stringResource(R.string.menu_sound_library)) },
                                             onClick = {
                                                 onOpenLibrary()
                                                 trackMenuOpen = false
@@ -2460,7 +2464,7 @@ private fun TrackPanel(
                                         HorizontalDivider()
                                         if (project.tracks.size > 1) {
                                             DropdownMenuItem(
-                                                text = { Text("このトラックを削除") },
+                                                text = { Text(stringResource(R.string.panel_track_delete)) },
                                                 onClick = {
                                                     vm.removeTrack(index)
                                                     trackMenuOpen = false
@@ -2478,7 +2482,7 @@ private fun TrackPanel(
                                     modifier = Modifier.heightIn(min = 22.dp),
                                 ) {
                                     Text(
-                                        "音源: $sf2Label · $statusText",
+                                        stringResource(R.string.panel_sound_status, sf2Label, statusText),
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.primary,
                                         maxLines = 1,
@@ -2489,7 +2493,7 @@ private fun TrackPanel(
                                     onDismissRequest = { fontMenuOpen = false },
                                 ) {
                                     DropdownMenuItem(
-                                        text = { Text("内蔵ピアノ") },
+                                        text = { Text(stringResource(R.string.panel_sound_bundled)) },
                                         leadingIcon = {
                                             if (track.soundFontPath.isBlank()) {
                                                 Icon(Icons.Rounded.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(14.dp))
@@ -2502,7 +2506,7 @@ private fun TrackPanel(
                                     )
                                     libraryFonts.filter { !it.isBundled }.forEach { f ->
                                         DropdownMenuItem(
-                                            text = { Text("${f.name} (${f.presetCount}プリセット)") },
+                                            text = { Text(stringResource(R.string.library_font_entry, f.name, f.presetCount)) },
                                             leadingIcon = {
                                                 if (track.soundFontPath == f.key) {
                                                     Icon(Icons.Rounded.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(14.dp))
@@ -2516,7 +2520,7 @@ private fun TrackPanel(
                                     }
                                     HorizontalDivider()
                                     DropdownMenuItem(
-                                        text = { Text("音源ライブラリ…") },
+                                        text = { Text(stringResource(R.string.menu_sound_library)) },
                                         onClick = {
                                             onOpenLibrary()
                                             fontMenuOpen = false
@@ -2535,7 +2539,7 @@ private fun TrackPanel(
                                     contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
                                     modifier = Modifier.heightIn(min = 26.dp),
                                 ) {
-                                    Text("M", style = MaterialTheme.typography.labelSmall)
+                                    Text(stringResource(R.string.panel_mute), style = MaterialTheme.typography.labelSmall)
                                 }
                                 TextButton(
                                     onClick = { vm.toggleTrackSolo(index) },
@@ -2546,7 +2550,7 @@ private fun TrackPanel(
                                     contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
                                     modifier = Modifier.heightIn(min = 26.dp),
                                 ) {
-                                    Text("S", style = MaterialTheme.typography.labelSmall)
+                                    Text(stringResource(R.string.panel_solo), style = MaterialTheme.typography.labelSmall)
                                 }
                                 Spacer(Modifier.width(6.dp))
                                 Box {
@@ -2556,7 +2560,7 @@ private fun TrackPanel(
                                         modifier = Modifier.heightIn(min = 24.dp),
                                     ) {
                                         Text(
-                                            "プリセット ${track.presetIndex + 1}",
+                                            stringResource(R.string.panel_preset_n, track.presetIndex + 1),
                                             style = MaterialTheme.typography.labelSmall,
                                             color = MaterialTheme.colorScheme.primary,
                                         )
@@ -2584,7 +2588,7 @@ private fun TrackPanel(
                         val presets = vm.trackPresets(index)
                         if (presets.isEmpty()) {
                             DropdownMenuItem(
-                                text = { Text("プリセットがありません") },
+                                text = { Text(stringResource(R.string.panel_preset_none)) },
                                 onClick = { onPresetMenuToggle(-1) },
                             )
                         }
@@ -2648,11 +2652,11 @@ private fun SoundFontLibraryDialog(
         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         titleContentColor = MaterialTheme.colorScheme.onSurface,
         textContentColor = MaterialTheme.colorScheme.onSurface,
-        title = { Text("音源ライブラリ") },
+        title = { Text(stringResource(R.string.library_title)) },
         text = {
             Column {
                 Text(
-                    "読み込んだSoundFontはここにまとめて管理され、どのトラックにも割り当てできます。同じファイルを複数トラックで使ってもメモリは共有されます。",
+                    stringResource(R.string.library_desc),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -2679,11 +2683,11 @@ private fun SoundFontLibraryDialog(
                                     overflow = TextOverflow.Ellipsis,
                                 )
                                 Text(
-                                    buildString {
-                                        append("${font.presetCount} プリセット")
-                                        append(" ・ 使用中: ")
-                                        append(usedBy.ifBlank { "なし" })
-                                    },
+                                    stringResource(
+                                        R.string.library_used_by_full,
+                                        font.presetCount,
+                                        usedBy.ifBlank { stringResource(R.string.common_none) },
+                                    ),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     maxLines = 1,
@@ -2698,8 +2702,8 @@ private fun SoundFontLibraryDialog(
                                 contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
                             ) {
                                 Text(
-                                    if (font.usedByTracks.contains(activeIdx)) "使用中"
-                                    else "割り当て",
+                                    if (font.usedByTracks.contains(activeIdx)) stringResource(R.string.panel_sound_in_use)
+                                    else stringResource(R.string.panel_sound_assign),
                                     style = MaterialTheme.typography.labelMedium,
                                 )
                             }
@@ -2707,7 +2711,7 @@ private fun SoundFontLibraryDialog(
                                 IconButton(onClick = { vm.removeLibraryFont(font.key) }) {
                                     Icon(
                                         Icons.Rounded.Delete,
-                                        contentDescription = "ライブラリから削除",
+                                        contentDescription = stringResource(R.string.library_remove),
                                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                         modifier = Modifier.size(18.dp),
                                     )
@@ -2723,11 +2727,11 @@ private fun SoundFontLibraryDialog(
                 onClick = onLoadSoundFont,
                 enabled = !ui.busy.soundFont,
             ) {
-                Text(if (ui.busy.soundFont) "読込中…" else "SF2を追加…")
+                Text(if (ui.busy.soundFont) stringResource(R.string.library_loading_busy) else stringResource(R.string.library_add_sf2))
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("閉じる") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_close)) }
         },
     )
 }
