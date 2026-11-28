@@ -498,7 +498,7 @@ private fun EditorScreen(
     var kebabMenuOpen by remember { mutableStateOf(false) }
     var fontMenuOpen by remember { mutableStateOf(false) }
     var showFontLibrary by remember { mutableStateOf(false) }
-    var showTrackPanel by remember { mutableStateOf(true) }
+    val showTrackPanel by vm.trackPanelVisible.collectAsStateWithLifecycle()
     /** Show/hide the per-track info line (sound source / preset / M·S). */
     var showTrackDetails by rememberSaveable { mutableStateOf(true) }
     /** Track index being renamed, -1 when closed. */
@@ -602,7 +602,7 @@ private fun EditorScreen(
                 vm = vm,
                 onBpm = { showBpm = true },
                 showTrackPanel = showTrackPanel,
-                onToggleTrackPanel = { showTrackPanel = !showTrackPanel },
+                onToggleTrackPanel = vm::toggleTrackPanel,
                 onMeter = { showMeter = true },
                 onNew = { showNewConfirm = true },
                 onImport = onImport,
@@ -1319,15 +1319,13 @@ private fun WideTopRow(
             icon = Icons.Rounded.MusicNote,
             onClick = onMeter,
         )
-        if (project.tracks.size > 1) {
-            Spacer(Modifier.width(6.dp))
-            MetaChip(
-                text = project.track.name,
-                icon = Icons.Rounded.Piano,
-                onClick = onToggleTrackPanel,
-                active = showTrackPanel,
-            )
-        }
+        Spacer(Modifier.width(6.dp))
+        MetaChip(
+            text = project.track.name,
+            icon = Icons.Rounded.Piano,
+            onClick = onToggleTrackPanel,
+            active = showTrackPanel,
+        )
         Spacer(Modifier.width(6.dp))
         MidiChip(midi = ui.midi, onClick = onMidiInput)
         Spacer(Modifier.width(6.dp))
